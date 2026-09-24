@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+// One version for every platform: app/package.json ("0.1.0" -> code 100).
+def appVersion = new groovy.json.JsonSlurper().parse(file('../../package.json')).version
+def (vMajor, vMinor, vPatch) = appVersion.tokenize('.').collect { it.replaceAll('[^0-9].*', '') as int }
+
 android {
     namespace = "io.github.nguyenquocanhz.termward"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +11,8 @@ android {
         applicationId "io.github.nguyenquocanhz.termward"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode vMajor * 10000 + vMinor * 100 + vPatch
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

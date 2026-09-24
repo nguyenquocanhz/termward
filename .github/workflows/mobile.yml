@@ -46,7 +46,7 @@ jobs:
           path: app/android/app/build/outputs/apk/debug/*.apk
 
   ios:
-    name: iOS (simulator build)
+    name: iOS (simulator build + unsigned IPA)
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -71,3 +71,10 @@ jobs:
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath ios/App/build CODE_SIGNING_ALLOWED=NO build
+      - name: Unsigned IPA (for SideStore / AltStore)
+        working-directory: app
+        run: sh scripts/ios-ipa.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: termward-ios-unsigned-ipa
+          path: app/ios/App/build/Termward-*.ipa

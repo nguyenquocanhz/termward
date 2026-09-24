@@ -81,9 +81,38 @@ jobs:
           if-no-files-found: error
           path: app/Termward-*.apk
 
+  ios:
+    name: iOS (unsigned IPA for SideStore / AltStore)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Build IPA
+        working-directory: app
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest golang.org/x/mobile/cmd/gobind@latest
+          npm ci
+          gomobile init
+          node scripts/mobile.mjs core ios
+          node scripts/mobile.mjs web
+          sh scripts/ios-ipa.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          if-no-files-found: error
+          path: app/ios/App/build/Termward-*.ipa
+
   release:
     name: Draft release
-    needs: [desktop, android]
+    needs: [desktop, android, ios]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
