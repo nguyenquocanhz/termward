@@ -1,0 +1,12 @@
+{
+  "name": "termward-ios-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iOS side of the TermwardCore Capacitor plugin: embeds the Go core (Termwardcore.xcframework, built by `node scripts/mobile.mjs core ios` on macOS).",
+  "license": "MIT",
+  "capacitor": {
+    "ios": {
+      "src": "Sources"
+    }
+  }
+}

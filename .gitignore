@@ -1,0 +1,23 @@
+# Go core
+core/bin/
+
+# App (Electron + Capacitor)
+app/node_modules/
+app/dist/
+app/dist-electron/
+app/release/
+
+# Mobile build outputs (rebuilt by scripts/mobile.mjs)
+app/android/app/libs/*.aar
+app/android/app/libs/*-sources.jar
+app/native/ios-core/*.xcframework
+app/ios/App/build/
+
+# Local development data (dev core, test keys, emulator captures)
+.dev/
+
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,13 @@
+* text=auto eol=lf
+
+# The health collector runs as `sh -s` on servers: never CRLF.
+*.sh text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.jar binary
+*.aar binary
+*.woff2 binary

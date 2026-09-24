@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="channel_alerts">Cảnh báo máy chủ</string>
+    <string name="channel_alerts_desc">Máy chủ mất kết nối, chuyển sang nghiêm trọng hoặc ổn định trở lại</string>
+    <string name="channel_monitor">Giám sát khi chạy nền</string>
+    <string name="monitor_title">Đang theo dõi máy chủ</string>
+    <string name="monitor_text">Termward vẫn kiểm tra sức khỏe máy chủ khi chạy nền</string>
+</resources>

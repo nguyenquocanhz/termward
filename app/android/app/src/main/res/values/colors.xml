@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="tw_bg">#FAF9F5</color>
+    <color name="tw_accent">#C96442</color>
+    <color name="tw_accent_light">#DB7F5F</color>
+</resources>

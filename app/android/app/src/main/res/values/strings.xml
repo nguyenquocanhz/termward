@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Termward</string>
+    <string name="title_activity_main">Termward</string>
+    <string name="package_name">io.github.nguyenquocanhz.termward</string>
+    <string name="custom_url_scheme">io.github.nguyenquocanhz.termward</string>
+    <string name="channel_alerts">Server alerts</string>
+    <string name="channel_alerts_desc">A server went down, became critical or recovered</string>
+    <string name="channel_monitor">Background monitoring</string>
+    <string name="monitor_title">Watching your servers</string>
+    <string name="monitor_text">Termward keeps checking health in the background</string>
+</resources>

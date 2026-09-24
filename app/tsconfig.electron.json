@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "outDir": "dist-electron",
+    "rootDir": "electron"
+  },
+  "include": ["electron/**/*.ts"],
+  "exclude": ["electron/bridge.d.ts"]
+}
