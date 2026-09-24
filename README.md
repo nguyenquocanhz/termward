@@ -83,7 +83,7 @@ Download the latest build from **[Releases](https://github.com/nguyenquocanhz/te
 | macOS (Apple Silicon) | `Termward-x.y.z-mac-arm64.dmg` |
 | Linux (x64) | `Termward-x.y.z-linux-x86_64.AppImage` or `Termward-x.y.z-linux-amd64.deb` |
 | Android 7+ | `Termward-x.y.z.apk` |
-| iOS | build from source with Xcode (see below) |
+| iOS / iPadOS 15+ | `Termward-x.y.z.ipa` — install with SideStore and a free Apple ID ([how](#ios-with-sidestore-free-apple-id)) |
 
 Builds are not code-signed with a paid certificate yet:
 
@@ -91,6 +91,37 @@ Builds are not code-signed with a paid certificate yet:
 - **macOS:** the first time, right-click the app → *Open*, or run
   `xattr -dr com.apple.quarantine /Applications/Termward.app`.
 - **Android:** allow installing apps from your browser/file manager when asked.
+
+### iOS with SideStore (free Apple ID)
+
+No paid developer account is needed. [SideStore](https://docs.sidestore.io)
+signs Termward with your own Apple ID and refreshes it on the phone. The PC is
+needed for the first setup (and occasionally to renew the pairing file).
+Tip: use a separate, free Apple ID for sideloading.
+
+1. **iPhone:** install [LocalDevVPN](https://apps.apple.com/app/localdevvpn/id6755608044)
+   from the App Store, open it and tap **Connect**. Keep it connected whenever
+   SideStore installs or refreshes apps.
+2. **PC (Windows):** install iTunes from apple.com, then
+   [iloader](https://github.com/nab138/iloader/releases/latest) (the `.msi`).
+3. Connect the iPhone by USB and tap **Trust**. In iloader, sign in with your
+   Apple ID, select the device and click **Install SideStore (Stable)**.
+4. **iPhone:** Settings → General → VPN & Device Management → trust the
+   developer app (iOS 18+: *Allow & Restart*). On iOS 16+ also turn on
+   Settings → Privacy & Security → **Developer Mode**.
+5. Open **SideStore** (LocalDevVPN connected), sign in with the same Apple ID,
+   go to **My Apps** and tap the **7 DAYS** counter once.
+6. Add the Termward source: **Sources → +**, paste
+   `https://raw.githubusercontent.com/nguyenquocanhz/termward/main/sidestore/source.json`,
+   tap the ⊕ on the preview, then **Done → Add Source**. Install **Termward**
+   from it. (Alternatively download the `.ipa` from Releases and add it from
+   **My Apps → +**.)
+
+Free Apple ID limits: apps expire after **7 days** unless refreshed (SideStore
+refreshes in the background, or tap **Refresh All** with LocalDevVPN on), at
+most **3 apps** per device including SideStore, and 10 app IDs per week. iOS
+pauses apps in the background, so health checks and alerts run while
+Termward is open.
 
 On desktop, closing the window keeps Termward monitoring from the tray; use
 **Quit** (the ⏻ button, the tray menu, or Settings → Window) to stop it. On
@@ -175,6 +206,17 @@ lại. Không cần cài gì lên máy chủ.
 - Tạo / nhập / cài khóa SSH lên máy chủ (giống `ssh-copy-id`, hỗ trợ SELinux trên AlmaLinux/RHEL).
 - Khởi động lại / tắt máy chủ từ xa, tự tạm ngưng cảnh báo trong lúc bảo trì.
 - Có bản desktop (Windows, macOS, Linux) và mobile (Android, iOS); giao diện tiếng Việt và tiếng Anh, sáng/tối.
+
+**Cài lên iPhone bằng SideStore (Apple ID miễn phí, không cần tài khoản developer):**
+
+1. Trên iPhone: cài [LocalDevVPN](https://apps.apple.com/app/localdevvpn/id6755608044) từ App Store, mở và bấm **Connect**.
+2. Trên máy tính Windows: cài iTunes (bản tải từ apple.com), rồi cài [iloader](https://github.com/nab138/iloader/releases/latest) (tệp `.msi`).
+3. Cắm iPhone qua cáp, bấm **Tin cậy**. Mở iloader, đăng nhập Apple ID, chọn máy, bấm **Install SideStore (Stable)**.
+4. Trên iPhone: Cài đặt → Cài đặt chung → VPN & Quản lý thiết bị → tin cậy nhà phát triển (iOS 18+: *Cho phép & Khởi động lại*). iOS 16+ bật thêm Cài đặt → Quyền riêng tư & Bảo mật → **Chế độ nhà phát triển**.
+5. Bật LocalDevVPN, mở **SideStore**, đăng nhập cùng Apple ID, vào **My Apps** và chạm vào bộ đếm **7 DAYS** một lần.
+6. Vào **Sources → +**, dán `https://raw.githubusercontent.com/nguyenquocanhz/termward/main/sidestore/source.json`, chạm ⊕ ở phần xem trước, rồi **Done → Add Source** và cài **Termward**.
+
+Giới hạn của Apple ID miễn phí: app hết hạn sau **7 ngày** nếu không làm mới (SideStore tự làm mới khi LocalDevVPN đang bật), tối đa **3 app** mỗi máy (tính cả SideStore). Nên dùng một Apple ID phụ để sideload.
 
 ## License
 

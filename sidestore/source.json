@@ -1,0 +1,44 @@
+{
+  "name": "Termward",
+  "identifier": "io.github.nguyenquocanhz.termward.source",
+  "subtitle": "SSH manager that keeps watch over your servers",
+  "description": "Official source for Termward, an open-source SSH manager with proactive server health alerts.",
+  "iconURL": "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/app/assets/icon.png",
+  "website": "https://github.com/nguyenquocanhz/termward",
+  "tintColor": "#C96442",
+  "featuredApps": ["io.github.nguyenquocanhz.termward"],
+  "apps": [
+    {
+      "name": "Termward",
+      "bundleIdentifier": "io.github.nguyenquocanhz.termward",
+      "developerName": "nguyenquocanhz",
+      "subtitle": "SSH manager with proactive health alerts",
+      "localizedDescription": "Manage many servers over SSH and hear about problems before your users do. Termward checks CPU, memory, disks, load, failed systemd services and Docker containers, and notifies you when a server goes down, turns critical or recovers. Nothing to install on your servers.\n\n• Terminals with an Esc/Tab/Ctrl/arrow key bar\n• Run a command on many servers at once\n• Create, import and deploy SSH keys\n• Reboot or shut down servers\n• Host keys verified, secrets kept in the Keychain\n• English and Tiếng Việt\n\nOpen source (MIT): https://github.com/nguyenquocanhz/termward",
+      "iconURL": "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/app/assets/icon.png",
+      "tintColor": "#C96442",
+      "category": "developer",
+      "screenshots": [
+        "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/docs/phone-overview.png",
+        "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/docs/phone-host.png",
+        "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/docs/phone-terminal.png"
+      ],
+      "versions": [
+        {
+          "version": "0.1.0",
+          "buildVersion": "100",
+          "date": "2026-09-24T12:54:09Z",
+          "localizedDescription": "First release: proactive health alerts, terminals, multi-server commands, SSH key management, reboot/shutdown.",
+          "downloadURL": "https://github.com/nguyenquocanhz/termward/releases/download/v0.1.0/Termward-0.1.0.ipa",
+          "size": 4357037,
+          "sha256": "0276cab1a997e18f95287d235cb0b7c7abc23f1af778779f53fda1461bb278ba",
+          "minOSVersion": "15.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}
