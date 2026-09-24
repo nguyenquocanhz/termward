@@ -55,13 +55,15 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "identity": "-"
     },
     "linux": {
       "target": [
@@ -70,7 +72,8 @@
       ],
       "category": "Development",
       "maintainer": "nguyenquocanhz <https://github.com/nguyenquocanhz>"
-    }
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

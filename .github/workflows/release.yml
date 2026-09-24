@@ -1,6 +1,8 @@
 name: Release
 
-# Push a tag like v0.1.0 to build installers and attach them to a draft release.
+# Push a tag like v0.1.0: every platform is built, then one job gathers the
+# files into a single draft release (parallel uploads would race and create
+# duplicate drafts).
 on:
   push:
     tags: ["v*"]
@@ -34,10 +36,11 @@ jobs:
       - run: npm run dist -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          draft: true
-          files: |
+          name: desktop-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
             app/release/*.exe
             app/release/*.dmg
             app/release/*.AppImage
@@ -71,8 +74,24 @@ jobs:
           node scripts/mobile.mjs core android
           node scripts/mobile.mjs web
           cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk "../termward-${GITHUB_REF_NAME#v}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "../Termward-${GITHUB_REF_NAME#v}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          if-no-files-found: error
+          path: app/Termward-*.apk
+
+  release:
+    name: Draft release
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
       - uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: app/termward-*.apk
+          files: dist/*

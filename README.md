@@ -79,14 +79,18 @@ Download the latest build from **[Releases](https://github.com/nguyenquocanhz/te
 
 | Platform | File |
 |---|---|
-| Windows | `Termward-Setup-x.y.z.exe` |
-| macOS | `Termward-x.y.z.dmg` |
-| Linux | `Termward-x.y.z.AppImage` or `.deb` |
-| Android | `termward-x.y.z.apk` |
+| Windows 10/11 (x64) | `Termward-Setup-x.y.z.exe` |
+| macOS (Apple Silicon) | `Termward-x.y.z-mac-arm64.dmg` |
+| Linux (x64) | `Termward-x.y.z-linux-x86_64.AppImage` or `Termward-x.y.z-linux-amd64.deb` |
+| Android 7+ | `Termward-x.y.z.apk` |
 | iOS | build from source with Xcode (see below) |
 
-Builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper
-will ask for confirmation the first time.
+Builds are not code-signed with a paid certificate yet:
+
+- **Windows:** SmartScreen may warn — choose *More info → Run anyway*.
+- **macOS:** the first time, right-click the app → *Open*, or run
+  `xattr -dr com.apple.quarantine /Applications/Termward.app`.
+- **Android:** allow installing apps from your browser/file manager when asked.
 
 On desktop, closing the window keeps Termward monitoring from the tray; use
 **Quit** (the ⏻ button, the tray menu, or Settings → Window) to stop it. On
