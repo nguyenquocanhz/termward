@@ -50,8 +50,13 @@ public class TermwardCorePlugin: CAPPlugin, CAPBridgedPlugin, NotificationHandle
         var d = dir
         try? d.setResourceValues(values)
 
+        // gomobile exports a C function (NSError** out-param), which Swift
+        // does not turn into `throws`.
         var p = 0
-        try MobileStart(dir.path, try VaultKey.get(), language, notifier, &p)
+        var err: NSError?
+        guard MobileStart(dir.path, try VaultKey.get(), language, notifier, &p, &err) else {
+            throw err ?? NSError(domain: "Termward", code: 2, userInfo: [NSLocalizedDescriptionKey: "core did not start"])
+        }
         port = p
         token = MobileToken()
     }
