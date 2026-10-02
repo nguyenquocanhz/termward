@@ -1,7 +1,7 @@
 {
   "name": "termward",
   "productName": "Termward",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SSH manager for many servers with proactive health alerts and SSH key management.",
   "author": "nguyenquocanhz",
   "license": "MIT",
