@@ -6,14 +6,16 @@
   "iconURL": "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/app/assets/icon.png",
   "website": "https://github.com/nguyenquocanhz/termward",
   "tintColor": "#C96442",
-  "featuredApps": ["io.github.nguyenquocanhz.termward"],
+  "featuredApps": [
+    "io.github.nguyenquocanhz.termward"
+  ],
   "apps": [
     {
       "name": "Termward",
       "bundleIdentifier": "io.github.nguyenquocanhz.termward",
       "developerName": "nguyenquocanhz",
       "subtitle": "SSH manager with proactive health alerts",
-      "localizedDescription": "Manage many servers over SSH and hear about problems before your users do. Termward checks CPU, memory, disks, load, failed systemd services and Docker containers, and notifies you when a server goes down, turns critical or recovers. Nothing to install on your servers.\n\n• Terminals with an Esc/Tab/Ctrl/arrow key bar\n• Run a command on many servers at once\n• Create, import and deploy SSH keys\n• Reboot or shut down servers\n• Host keys verified, secrets kept in the Keychain\n• English and Tiếng Việt\n\nOpen source (MIT): https://github.com/nguyenquocanhz/termward",
+      "localizedDescription": "Manage many servers over SSH and hear about problems before your users do. Termward checks CPU, memory, disks, load, failed systemd services and Docker containers, and notifies you when a server goes down, turns critical or recovers. Nothing to install on your servers.\n\n• Terminals with an Esc/Tab/Ctrl/arrow key bar\n• Run a command on many servers at once\n• Create, import and deploy SSH keys\n• Hardware check: disks, RAID, RAM, power supplies, BMC log, with parts to replace\n• Reboot or shut down servers\n• Host keys verified, secrets kept in the Keychain\n• English and Tiếng Việt\n\nOpen source (MIT): https://github.com/nguyenquocanhz/termward",
       "iconURL": "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/app/assets/icon.png",
       "tintColor": "#C96442",
       "category": "developer",
@@ -23,6 +25,16 @@
         "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/docs/phone-terminal.png"
       ],
       "versions": [
+        {
+          "version": "0.2.0",
+          "buildVersion": "200",
+          "date": "2026-10-02T13:37:49Z",
+          "localizedDescription": "Hardware check: one tap runs Diagward over SSH and reports disks (S.M.A.R.T.), RAID, RAM/ECC, CPU, temperatures, fans, power supplies and the BMC event log, with what to do and the serials of parts to replace. Copy the result as Markdown.",
+          "downloadURL": "https://github.com/nguyenquocanhz/termward/releases/download/v0.2.0/Termward-0.2.0.ipa",
+          "size": 6293032,
+          "sha256": "7c1a14a52afdfacbe9fc9243bd7b453d7c0209dd8d9137ad7d916cc2e43777b0",
+          "minOSVersion": "15.0"
+        },
         {
           "version": "0.1.0",
           "buildVersion": "100",
