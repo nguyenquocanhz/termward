@@ -131,6 +131,9 @@ func Open(dir string) (*Store, error) {
 	return s, nil
 }
 
+// Dir is the data directory the store lives in.
+func (s *Store) Dir() string { return filepath.Dir(s.path) }
+
 func NewID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

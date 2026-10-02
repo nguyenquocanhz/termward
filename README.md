@@ -35,6 +35,7 @@ script sent over the SSH connection you already have.
 | **Fast terminals** | xterm.js with tabs, one multiplexed SSH connection per server, `Ctrl/⌘+K` to jump to any server. |
 | **Run everywhere at once** | Run a command on many servers in parallel, compare output and exit codes, save snippets. |
 | **SSH key management** | Create Ed25519 / RSA / ECDSA keys, import from `~/.ssh`, deploy to a server like `ssh-copy-id` (SELinux-aware) and switch the server to the new key only after it is verified. |
+| **Hardware check** | One click runs [Diagward](https://github.com/nguyenquocanhz/diagward) over SSH: disks (S.M.A.R.T.), RAID, RAM/ECC, CPU, temperatures, fans, power supplies, the BMC event log and kernel logs, explained with what to do and the serial numbers for a warranty case. Save it as an HTML report or copy it as Markdown. |
 | **Power actions** | Reboot or shut down a server (root, passwordless sudo or sudo password), with alerts paused during the planned downtime. |
 | **Safe by default** | Host keys verified with first-use confirmation and change detection, secrets in the OS keychain, no telemetry. See [SECURITY.md](SECURITY.md). |
 | **English & Tiếng Việt** | Light and dark themes, bilingual UI. |
@@ -205,6 +206,7 @@ lại. Không cần cài gì lên máy chủ.
 - Terminal nhanh, chạy lệnh trên nhiều máy cùng lúc, lưu lệnh hay dùng.
 - Tạo / nhập / cài khóa SSH lên máy chủ (giống `ssh-copy-id`, hỗ trợ SELinux trên AlmaLinux/RHEL).
 - Khởi động lại / tắt máy chủ từ xa, tự tạm ngưng cảnh báo trong lúc bảo trì.
+- **Kiểm tra phần cứng** một chạm (dùng [Diagward](https://github.com/nguyenquocanhz/diagward)): ổ cứng, RAID, RAM/ECC, nguồn, quạt, log BMC… kèm cách xử lý và serial linh kiện cần thay; lưu báo cáo HTML hoặc chép Markdown gửi Zalo/Telegram.
 - Có bản desktop (Windows, macOS, Linux) và mobile (Android, iOS); giao diện tiếng Việt và tiếng Anh, sáng/tối.
 
 **Cài lên iPhone bằng SideStore (Apple ID miễn phí, không cần tài khoản developer):**

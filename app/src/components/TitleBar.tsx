@@ -7,7 +7,9 @@ export function TitleBar() {
   const t = useT();
   const view = useApp((s) => s.view);
   const hostName = useApp((s) =>
-    s.view.name === "host" ? s.hosts.find((h) => h.id === (s.view as { hostId: string }).hostId)?.name : undefined,
+    s.view.name === "host" || s.view.name === "hardware"
+      ? s.hosts.find((h) => h.id === (s.view as { hostId: string }).hostId)?.name
+      : undefined,
   );
 
   const crumbs: string[] = (() => {
@@ -16,6 +18,8 @@ export function TitleBar() {
         return [t("nav.overview")];
       case "host":
         return [t("nav.hosts"), hostName ?? ""];
+      case "hardware":
+        return [t("nav.hosts"), hostName ?? "", t("hw.title")];
       case "terminals":
         return [t("nav.terminals")];
       case "keys":
@@ -30,8 +34,14 @@ export function TitleBar() {
   return (
     <header className="titlebar drag">
       {/* Phones: back from a server, otherwise open the drawer. */}
-      {view.name === "host" ? (
-        <button className="icon-btn mobile-only" onClick={() => navigate({ name: "overview" })} aria-label="Back">
+      {view.name === "host" || view.name === "hardware" ? (
+        <button
+          className="icon-btn mobile-only"
+          onClick={() =>
+            navigate(view.name === "hardware" ? { name: "host", hostId: view.hostId } : { name: "overview" })
+          }
+          aria-label="Back"
+        >
           <ChevronLeft size={20} />
         </button>
       ) : (

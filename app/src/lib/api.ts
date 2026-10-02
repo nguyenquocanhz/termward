@@ -191,6 +191,114 @@ export interface AuthDetails {
   wrong: boolean;
 }
 
+// ------------------------------------------------------------ hardware (Diagward)
+
+/** Diagward severity of a finding or component. */
+export type Severity = "ok" | "info" | "warn" | "crit";
+/** A message in both languages. */
+export interface LText {
+  en: string;
+  vi: string;
+}
+
+export interface HwPart {
+  kind: string;
+  vendor?: string;
+  model?: string;
+  serial?: string;
+  location?: string;
+  firmware?: string;
+  size?: string;
+}
+
+export interface HwFinding {
+  id: string;
+  component: string;
+  severity: Severity;
+  target?: string;
+  title: LText;
+  detail: LText;
+  action: LText;
+  evidence?: string[];
+  part?: HwPart;
+}
+
+export interface HwComponent {
+  component: string;
+  name: LText;
+  severity: Severity;
+  crit: number;
+  warn: number;
+  info: number;
+  checked: boolean;
+  partial?: boolean;
+}
+
+export interface HwCoverage {
+  id: string;
+  component: string;
+  name: LText;
+  state: "ran" | "partial" | "skipped" | "failed";
+  reason?: LText;
+  fix?: LText;
+  cmd?: string;
+  /** Cannot exist on this platform or covered elsewhere: not a gap. */
+  notApplicable?: boolean;
+}
+
+/** The subset of Diagward's model.Report the UI shows. */
+export interface HwReport {
+  tool: string;
+  version: string;
+  host: {
+    hostname: string;
+    os?: string;
+    kernel?: string;
+    arch?: string;
+    vendor?: string;
+    model?: string;
+    serial?: string;
+    bios?: string;
+    cpu?: string;
+    memBytes?: number;
+    virtual?: string;
+  };
+  env: { os: string; root: boolean; virtual?: string; container?: boolean; distro?: string; sinceDays: number };
+  collected: string;
+  seconds: number;
+  verdict: Severity;
+  summary: HwComponent[];
+  findings: HwFinding[];
+  coverage: HwCoverage[];
+  notes?: LText[];
+}
+
+/** One line of the "parts to replace" list (merged per physical part). */
+export interface HwPartRow {
+  kind: LText;
+  vendor?: string;
+  model?: string;
+  serial?: string;
+  location?: string;
+  firmware?: string;
+  size?: string;
+  severity: Severity;
+  why: LText;
+  target?: string;
+}
+
+export interface HardwareResult {
+  report: HwReport;
+  ranAs: "root" | "sudo" | "user" | "admin";
+  savedAt: string;
+  partial?: boolean;
+  parts: HwPartRow[];
+  /** The parts list as plain text for a warranty email ("" when nothing to replace). */
+  rma: LText;
+}
+
+export type HwReportFormat = "html" | "md" | "json";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -247,6 +355,50 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return data as T;
 }
 
+/** Fetches a file from the core with the session token (for downloads). */
+async function fetchFile(path: string): Promise<{ blob: Blob; filename: string }> {
+  if (!core) throw new Error("core not initialised");
+  let res: Response;
+  try {
+    res = await fetch(core.url + path, { headers: { Authorization: `Bearer ${core.token}` } });
+  } catch {
+    throw new ApiError(0, "offline", "Cannot reach the Termward core.");
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => undefined);
+    const e = data?.error;
+    throw new ApiError(res.status, e?.code ?? "error", e?.message ?? res.statusText, e?.details);
+  }
+  const cd = res.headers.get("Content-Disposition") ?? "";
+  const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? "diagward-report";
+  return { blob: await res.blob(), filename };
+}
+
+export function hardwareReportPath(hostId: string, format: HwReportFormat, lang: "en" | "vi"): string {
+  return `/api/hosts/${encodeURIComponent(hostId)}/hardware/report?format=${format}&lang=${lang}`;
+}
+
+/** Downloads the last hardware report through a Blob (works in Electron and browsers). */
+export async function downloadHardwareReport(hostId: string, format: HwReportFormat, lang: "en" | "vi") {
+  const { blob, filename } = await fetchFile(hardwareReportPath(hostId, format, lang));
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return filename;
+}
+
+/** The last hardware report rendered as text (Markdown for chat apps). */
+export async function hardwareReportText(hostId: string, format: HwReportFormat, lang: "en" | "vi") {
+  const { blob } = await fetchFile(hardwareReportPath(hostId, format, lang));
+  return blob.text();
+}
+
 export function wsUrl(path: string, params: Record<string, string | number> = {}): string {
   if (!core) throw new Error("core not initialised");
   const q = new URLSearchParams({
@@ -269,6 +421,10 @@ export const api = {
   check: (id: string) => req<void>("POST", `/api/hosts/${id}/check`),
   power: (id: string, action: "reboot" | "poweroff", sudoPassword?: string) =>
     req<{ action: string; mutedUntil: string }>("POST", `/api/hosts/${id}/power`, { action, sudoPassword }),
+
+  hardware: (id: string, body: { sudoPassword?: string; allowNoRoot?: boolean; sinceDays?: number }) =>
+    req<HardwareResult>("POST", `/api/hosts/${id}/hardware`, body),
+  lastHardware: (id: string) => req<HardwareResult>("GET", `/api/hosts/${id}/hardware`),
 
   status: () => req<{ statuses: Status[]; connected: string[] }>("GET", "/api/status"),
   alerts: () => req<Alert[]>("GET", "/api/alerts"),

@@ -7,6 +7,7 @@ import {
   type Alert,
   type AuthDetails,
   type ExecEvent,
+  type HardwareResult,
   type Host,
   type HostKeyDetails,
   type Key,
@@ -17,11 +18,13 @@ import {
 } from "./lib/api";
 import { currentLang, t } from "./lib/i18n";
 import { findingText } from "./lib/findings";
+import { headline } from "./lib/hardware";
 import { installBridge } from "./lib/platform";
 
 export type View =
   | { name: "overview" }
   | { name: "host"; hostId: string }
+  | { name: "hardware"; hostId: string }
   | { name: "terminals" }
   | { name: "keys" }
   | { name: "run" }
@@ -51,6 +54,7 @@ export type Dialog =
   | { kind: "deployKey"; keyId: string; hostId?: string }
   | { kind: "importConfig" }
   | { kind: "power"; hostId: string; action: "reboot" | "poweroff" }
+  | { kind: "hardwareSudo"; hostId: string; reason: "required" | "wrong" }
   | {
       kind: "confirm";
       title: string;
@@ -85,6 +89,13 @@ export interface Toast {
   action?: { label: string; run: () => void };
 }
 
+/** Hardware check state of one host. */
+export interface HwState {
+  /** undefined: not loaded yet; null: never checked. */
+  result?: HardwareResult | null;
+  running?: { startedAt: number; section?: string; count: number };
+}
+
 export type ThemePref = "system" | "light" | "dark";
 export type LangPref = "auto" | "en" | "vi";
 
@@ -104,6 +115,7 @@ interface AppState {
   activeTab: string | null;
   jobs: Record<string, ExecJob>;
   lastJob: string | null;
+  hardware: Record<string, HwState>;
   theme: ThemePref;
   lang: LangPref;
   dialog: Dialog | null;
@@ -143,6 +155,7 @@ export const useApp = create<AppState>(() => ({
   activeTab: null,
   jobs: {},
   lastJob: null,
+  hardware: {},
   ...loadPrefs(),
   dialog: null,
   prompt: null,
@@ -252,6 +265,23 @@ function onEvent(type: string, data: unknown) {
     case "hosts_changed":
       void refreshHosts();
       break;
+    case "hardware_progress": {
+      const { hostId, section } = data as { hostId: string; section: string };
+      const run = get().hardware[hostId]?.running;
+      setHw(hostId, {
+        running: { startedAt: run?.startedAt ?? Date.now(), section, count: (run?.count ?? 0) + 1 },
+      });
+      break;
+    }
+    case "hardware_done": {
+      // Our own requests are finished by their response; this catches checks
+      // started elsewhere and progress events that arrived after the response.
+      const { hostId, error } = data as { hostId: string; error?: string };
+      if (hwPending.has(hostId)) break;
+      setHw(hostId, { running: undefined });
+      if (!error) void loadHardware(hostId);
+      break;
+    }
     case "keys_changed":
       void refreshKeys();
       break;
@@ -337,6 +367,7 @@ export function goBack(): boolean {
   if (s.dialog) return (closeDialog(), true);
   if (s.palette) return (set({ palette: false }), true);
   if (s.drawer) return (set({ drawer: false }), true);
+  if (s.view.name === "hardware") return (navigate({ name: "host", hostId: s.view.hostId }), true);
   if (s.view.name !== "overview") return (navigate({ name: "overview" }), true);
   return false;
 }
@@ -493,6 +524,63 @@ export async function runExec(hostIds: string[], command: string, timeoutSec: nu
   } catch (e) {
     set((s) => ({ jobs: { ...s.jobs, [id]: { ...job, done: true } } }));
     toast("error", t("err.generic"), errorText(e));
+  }
+}
+
+// ------------------------------------------------------------------ hardware
+
+const hwPending = new Set<string>();
+
+function setHw(hostId: string, patch: Partial<HwState>) {
+  set((s) => ({ hardware: { ...s.hardware, [hostId]: { ...s.hardware[hostId], ...patch } } }));
+}
+
+/** Loads the last saved hardware result of a host (null when never checked). */
+export async function loadHardware(hostId: string) {
+  try {
+    setHw(hostId, { result: await api.lastHardware(hostId) });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) setHw(hostId, { result: null });
+  }
+}
+
+/**
+ * Runs a hardware check. Asks for the sudo password (or permission to run
+ * without root) through a dialog when the server needs it.
+ */
+export async function startHardwareCheck(hostId: string, opts: { sudoPassword?: string; allowNoRoot?: boolean } = {}) {
+  const h = hostById(hostId);
+  if (!h || hwPending.has(hostId)) return;
+  if (!(await ensureConnected(hostId))) return;
+  hwPending.add(hostId);
+  setHw(hostId, { running: { startedAt: Date.now(), count: 0 } });
+  try {
+    const res = await api.hardware(hostId, opts);
+    setHw(hostId, { result: res, running: undefined });
+    const v = get().view;
+    if (v.name !== "hardware" || v.hostId !== hostId) {
+      const hl = headline(res.report);
+      toast(
+        hl === "crit" || hl === "warn" ? "alert" : "success",
+        t("hw.doneToast", { host: h.name }),
+        t(`hw.verdict.${hl}`),
+        {
+          label: t("hw.viewResults"),
+          run: () => navigate({ name: "hardware", hostId }),
+        },
+      );
+    }
+  } catch (e) {
+    setHw(hostId, { running: undefined });
+    if (e instanceof ApiError && (e.code === "sudo_required" || e.code === "sudo_wrong")) {
+      openDialog({ kind: "hardwareSudo", hostId, reason: e.code === "sudo_wrong" ? "wrong" : "required" });
+    } else if (e instanceof ApiError && e.code === "hardware_busy") {
+      toast("info", t("hw.busy", { host: h.name }));
+    } else {
+      toast("error", `${t("hw.failed")}: ${h.name}`, errorText(e));
+    }
+  } finally {
+    hwPending.delete(hostId);
   }
 }
 

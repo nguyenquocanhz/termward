@@ -21,7 +21,7 @@ export function MobileNav() {
     { view: { name: "keys" }, icon: KeyRound, label: t("nav.keys") },
     { view: { name: "settings" }, icon: Settings2, label: t("nav.settings") },
   ];
-  const current = view.name === "host" ? "overview" : view.name;
+  const current = view.name === "host" || view.name === "hardware" ? "overview" : view.name;
 
   return (
     <nav className="mobile-nav">

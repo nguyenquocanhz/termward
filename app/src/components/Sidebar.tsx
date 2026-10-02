@@ -69,7 +69,7 @@ export function Sidebar({ dark }: { dark: boolean }) {
     { view: { name: "settings" }, icon: Settings2, label: t("nav.settings") },
   ];
 
-  const selectedHost = view.name === "host" ? view.hostId : null;
+  const selectedHost = view.name === "host" || view.name === "hardware" ? view.hostId : null;
 
   return (
     <aside className={`sidebar${drawer ? " open" : ""}`}>

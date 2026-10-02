@@ -31,8 +31,10 @@ type Server struct {
 	monitor *health.Monitor
 	hub     *Hub
 
-	ctx  context.Context // cancelled on shutdown; parent of background jobs
-	jobs sync.Map        // exec job id -> context.CancelFunc
+	ctx     context.Context // cancelled on shutdown; parent of background jobs
+	jobs    sync.Map        // exec job id -> context.CancelFunc
+	hwBusy  sync.Map        // host id -> running hardware check
+	dataDir string          // last hardware results live in <dataDir>/hardware
 }
 
 type Deps struct {
@@ -48,7 +50,7 @@ type Deps struct {
 func New(ctx context.Context, d Deps) *Server {
 	return &Server{
 		token: d.Token, store: d.Store, keys: d.Keys, secrets: d.Secrets,
-		pool: d.Pool, monitor: d.Monitor, hub: d.Hub, ctx: ctx,
+		pool: d.Pool, monitor: d.Monitor, hub: d.Hub, ctx: ctx, dataDir: d.Store.Dir(),
 	}
 }
 
@@ -65,6 +67,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/hosts/{id}/trust", s.trustHost)
 	mux.HandleFunc("POST /api/hosts/{id}/check", s.checkHost)
 	mux.HandleFunc("POST /api/hosts/{id}/power", s.powerHost)
+	mux.HandleFunc("POST /api/hosts/{id}/hardware", s.runHardware)
+	mux.HandleFunc("GET /api/hosts/{id}/hardware", s.lastHardware)
+	mux.HandleFunc("GET /api/hosts/{id}/hardware/report", s.hardwareReport)
 
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("GET /api/alerts", s.alerts)
@@ -106,6 +111,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		h.Set("Access-Control-Allow-Origin", "*")
 		h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		h.Set("Access-Control-Expose-Headers", "Content-Disposition")
 		h.Set("Cache-Control", "no-store")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

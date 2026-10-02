@@ -66,6 +66,7 @@ func (s *Server) deleteHost(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pool.Drop(id)
 	s.secrets.Forget(secret.HostPassword(id))
+	removeHardware(s.dataDir, id)
 	s.monitor.Wake()
 	s.hub.Publish("hosts_changed", nil)
 	w.WriteHeader(http.StatusNoContent)

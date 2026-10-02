@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   FileInput,
+  HardDrive,
   KeyRound,
   LayoutGrid,
   Moon,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { useT } from "../lib/i18n";
 import { caps } from "../lib/platform";
-import { confirmQuit, navigate, openDialog, openTerminal, setPrefs, useApp } from "../store";
+import { confirmQuit, navigate, openDialog, openTerminal, setPrefs, startHardwareCheck, useApp } from "../store";
 import { StatusDot } from "./ui";
 
 interface Item {
@@ -136,6 +137,22 @@ export function Palette({ dark }: { dark: boolean }) {
         : []),
     ];
     const needle = q.trim().toLowerCase();
+    // One per server, so only while searching (they would bury the rest).
+    if (needle) {
+      for (const h of hosts) {
+        actions.push({
+          id: `hw:${h.id}`,
+          group: "actions",
+          label: t("hw.paletteAction", { host: h.name }),
+          hint: `${h.user}@${h.address}`,
+          icon: <HardDrive size={15} />,
+          run: () => {
+            navigate({ name: "hardware", hostId: h.id });
+            void startHardwareCheck(h.id);
+          },
+        });
+      }
+    }
     const score = (it: Item) => {
       if (!needle) return 1;
       const hay = `${it.label} ${it.hint ?? ""}`.toLowerCase();

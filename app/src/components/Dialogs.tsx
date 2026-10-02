@@ -4,6 +4,7 @@ import {
   FileInput,
   FileUp,
   FolderOpen,
+  HardDrive,
   KeyRound,
   Lock,
   Power,
@@ -21,6 +22,7 @@ import {
   errorText,
   refreshHosts,
   refreshKeys,
+  startHardwareCheck,
   toast,
   useApp,
   type Dialog,
@@ -56,6 +58,8 @@ function DialogSwitch({ d }: { d: Dialog }) {
       return <Confirm d={d} />;
     case "power":
       return <PowerDialog hostId={d.hostId} action={d.action} />;
+    case "hardwareSudo":
+      return <HardwareSudoDialog hostId={d.hostId} reason={d.reason} />;
   }
 }
 
@@ -142,6 +146,62 @@ function PowerDialog({ hostId, action }: { hostId: string; action: "reboot" | "p
           />
         </Field>
       )}
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- hardware
+
+/** Asked when a hardware check needs root: sudo password, or a limited run. */
+function HardwareSudoDialog({ hostId, reason }: { hostId: string; reason: "required" | "wrong" }) {
+  const t = useT();
+  const host = useApp((s) => s.hosts.find((h) => h.id === hostId));
+  const [sudo, setSudo] = useState("");
+  if (!host) return null;
+
+  // The check takes minutes: close now, the dialog comes back if sudo fails.
+  const run = (opts: { sudoPassword?: string; allowNoRoot?: boolean }) => {
+    closeDialog();
+    void startHardwareCheck(hostId, opts);
+  };
+
+  return (
+    <Modal
+      title={t("hw.sudoTitle", { host: host.name })}
+      icon={
+        <div className="key-icon">
+          <HardDrive size={17} />
+        </div>
+      }
+      onClose={closeDialog}
+      footer={
+        <>
+          <button className="btn" onClick={closeDialog}>
+            {t("common.cancel")}
+          </button>
+          <button className="btn primary" disabled={!sudo} onClick={() => run({ sudoPassword: sudo })}>
+            <HardDrive size={14} />
+            {t("hw.sudoRun")}
+          </button>
+        </>
+      }
+    >
+      <p className="muted" style={{ margin: 0 }}>
+        {t("hw.sudoBody", { user: host.user })}
+      </p>
+      <Field label={t("power.sudo")} error={reason === "wrong" ? t("power.sudoWrong") : undefined}>
+        <input
+          className="input"
+          type="password"
+          value={sudo}
+          autoComplete="off"
+          onChange={(e) => setSudo(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && sudo && run({ sudoPassword: sudo })}
+        />
+      </Field>
+      <button className="btn ghost sm hw-noroot" onClick={() => run({ allowNoRoot: true })}>
+        {t("hw.noRootRun")}
+      </button>
     </Modal>
   );
 }

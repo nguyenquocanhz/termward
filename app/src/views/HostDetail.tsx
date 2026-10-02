@@ -30,6 +30,7 @@ import {
   useApp,
 } from "../store";
 import { LevelBadge, Menu, Meter, Sparkline, StatusDot } from "../components/ui";
+import { HardwareCard } from "./Hardware";
 
 export function HostDetail({ hostId }: { hostId: string }) {
   const t = useT();
@@ -351,6 +352,8 @@ export function HostDetail({ hostId }: { hostId: string }) {
           </div>
         )
       )}
+
+      <HardwareCard hostId={host.id} />
 
       <h2 className="section">{t("host.system")}</h2>
       <div className="card card-pad">

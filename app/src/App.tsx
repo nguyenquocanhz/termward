@@ -14,6 +14,7 @@ import { Toasts } from "./components/Toasts";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Overview } from "./views/Overview";
 import { HostDetail } from "./views/HostDetail";
+import { HardwareView } from "./views/Hardware";
 import { Terminals } from "./views/Terminals";
 import { Keys } from "./views/Keys";
 import { Run } from "./views/Run";
@@ -116,9 +117,12 @@ export function App() {
         <TitleBar />
         {view.name !== "terminals" && (
           <div className="content">
-            <ErrorBoundary resetKey={view.name === "host" ? view.hostId : view.name}>
+            <ErrorBoundary
+              resetKey={view.name === "host" || view.name === "hardware" ? view.name + view.hostId : view.name}
+            >
               {view.name === "overview" && <Overview />}
               {view.name === "host" && <HostDetail key={view.hostId} hostId={view.hostId} />}
+              {view.name === "hardware" && <HardwareView key={view.hostId} hostId={view.hostId} />}
               {view.name === "keys" && <Keys />}
               {view.name === "run" && <Run />}
               {view.name === "settings" && <Settings />}
