@@ -7,7 +7,10 @@ import {
   type Alert,
   type AuthDetails,
   type ExecEvent,
+  type HardwareHost,
   type HardwareResult,
+  type HardwareRun,
+  type HardwareSummary,
   type Host,
   type HostKeyDetails,
   type Key,
@@ -18,7 +21,7 @@ import {
 } from "./lib/api";
 import { currentLang, t } from "./lib/i18n";
 import { findingText } from "./lib/findings";
-import { headline } from "./lib/hardware";
+import { headline, lt } from "./lib/hardware";
 import { installBridge } from "./lib/platform";
 
 export type View =
@@ -116,6 +119,12 @@ interface AppState {
   jobs: Record<string, ExecJob>;
   lastJob: string | null;
   hardware: Record<string, HwState>;
+  /** Fleet view of hardware checks: last verdict, schedule, unattended state. */
+  hwFleet: Record<string, HardwareHost>;
+  /** The current or last "check hardware on all servers" run. */
+  hwRun: HardwareRun | null;
+  /** Id of the finished run whose summary the user closed. */
+  hwRunDismissed: string | null;
   theme: ThemePref;
   lang: LangPref;
   dialog: Dialog | null;
@@ -156,6 +165,9 @@ export const useApp = create<AppState>(() => ({
   jobs: {},
   lastJob: null,
   hardware: {},
+  hwFleet: {},
+  hwRun: null,
+  hwRunDismissed: null,
   ...loadPrefs(),
   dialog: null,
   prompt: null,
@@ -184,13 +196,14 @@ export async function boot(): Promise<void> {
   try {
     await installBridge();
     await initCore();
-    const [hosts, keys, snippets, settings, status, alerts] = await Promise.all([
+    const [hosts, keys, snippets, settings, status, alerts, fleet] = await Promise.all([
       api.hosts(),
       api.keys(),
       api.snippets(),
       api.settings(),
       api.status(),
       api.alerts(),
+      api.hardwareFleet().catch(() => null),
     ]);
     set({
       hosts: hosts ?? [],
@@ -200,11 +213,17 @@ export async function boot(): Promise<void> {
       alerts: alerts ?? [],
       statuses: Object.fromEntries(status.statuses.map((s) => [s.hostId, s])),
       connected: Object.fromEntries(status.connected.map((id) => [id, true])),
+      hwFleet: Object.fromEntries((fleet?.hosts ?? []).map((h) => [h.hostId, h])),
+      hwRun: fleet?.run ?? null,
       booted: true,
     });
+    if (fleet) syncHwRunning(fleet.hosts);
     subscribeEvents(onEvent, (online) => {
       set({ online });
-      if (online) void refreshStatus();
+      if (online) {
+        void refreshStatus();
+        void refreshHwFleet();
+      }
     });
     window.termward?.onNotificationClick((hostId) => navigate({ name: "host", hostId }));
   } catch (e) {
@@ -220,6 +239,34 @@ export async function refreshKeys() {
 }
 export async function refreshSnippets() {
   set({ snippets: (await api.snippets()) ?? [] });
+}
+export async function refreshHwFleet() {
+  try {
+    const f = await api.hardwareFleet();
+    set({ hwFleet: Object.fromEntries(f.hosts.map((h) => [h.hostId, h])), hwRun: f.run ?? null });
+    syncHwRunning(f.hosts);
+  } catch {
+    /* offline: the next reconnect refreshes it */
+  }
+}
+
+/**
+ * Aligns the "check running" state with the core for checks this window did
+ * not start: a hardware_done missed while offline would otherwise leave the
+ * spinner (and a disabled "Run check" button) up for good.
+ */
+function syncHwRunning(hosts: HardwareHost[]) {
+  set((st) => {
+    const hardware = { ...st.hardware };
+    for (const h of hosts) {
+      if (hwPending.has(h.hostId)) continue;
+      const busy = h.state === "running" || h.state === "manual";
+      const cur = hardware[h.hostId];
+      if (busy && !cur?.running) hardware[h.hostId] = { ...cur, running: { startedAt: Date.now(), count: 0 } };
+      else if (!busy && cur?.running) hardware[h.hostId] = { ...cur, running: undefined };
+    }
+    return { hardware };
+  });
 }
 export async function refreshStatus() {
   const s = await api.status();
@@ -273,13 +320,43 @@ function onEvent(type: string, data: unknown) {
       });
       break;
     }
+    case "hardware_start": {
+      // Checks started elsewhere (the schedule, a fleet run, another window).
+      const { hostId } = data as { hostId: string };
+      if (!hwPending.has(hostId)) setHw(hostId, { running: { startedAt: Date.now(), count: 0 } });
+      break;
+    }
     case "hardware_done": {
       // Our own requests are finished by their response; this catches checks
       // started elsewhere and progress events that arrived after the response.
-      const { hostId, error } = data as { hostId: string; error?: string };
+      const { hostId, error, summary } = data as { hostId: string; error?: string; summary?: HardwareSummary };
+      if (summary) {
+        set((st) => ({ hwFleet: { ...st.hwFleet, [hostId]: { ...st.hwFleet[hostId], hostId, summary } } }));
+      }
       if (hwPending.has(hostId)) break;
       setHw(hostId, { running: undefined });
-      if (!error) void loadHardware(hostId);
+      // Reload the full report only where it is already shown.
+      if (!error && get().hardware[hostId]?.result !== undefined) void loadHardware(hostId);
+      break;
+    }
+    case "hardware_host": {
+      const h = data as HardwareHost;
+      set((st) => ({ hwFleet: { ...st.hwFleet, [h.hostId]: h } }));
+      break;
+    }
+    case "hardware_run": {
+      const run = data as HardwareRun;
+      const prev = get().hwRun;
+      set({ hwRun: run });
+      if (prev?.id === run.id && prev.active && !run.active) {
+        const extra = run.needsSudo.length + Object.keys(run.failed).length;
+        toast(
+          extra ? "alert" : "success",
+          t("fleet.doneToast", { n: run.ok.length, total: run.hosts.length }),
+          extra ? t("fleet.doneToastBody", { n: extra }) : undefined,
+          { label: t("common.open"), run: () => navigate({ name: "overview" }) },
+        );
+      }
       break;
     }
     case "keys_changed":
@@ -304,6 +381,7 @@ function queueNotification(a: Alert) {
 }
 
 function alertTitle(a: Alert): string {
+  if (a.kind === "hardware" && a.title) return lt(a.title, currentLang());
   const key = ({ down: "notif.down", crit: "notif.crit", warn: "notif.warn", ok: "notif.ok" } as const)[
     a.to as "down" | "crit" | "warn" | "ok"
   ];
@@ -311,6 +389,7 @@ function alertTitle(a: Alert): string {
 }
 
 export function alertBody(a: Alert): string {
+  if (a.kind === "hardware") return a.body ? lt(a.body, currentLang()) : "";
   const top = a.findings.find((f) => f.level !== "info");
   if (top) return findingText(top);
   return a.error ?? "";
@@ -331,9 +410,14 @@ function flushNotifications() {
     if (notify) window.termward?.notify({ title: alertTitle(a), body: alertBody(a), hostId: a.hostId });
     toast(a.to === "ok" ? "success" : "alert", alertTitle(a), alertBody(a), {
       label: t("common.open"),
-      run: () => navigate({ name: "host", hostId: a.hostId }),
+      run: () => navigate(alertView(a)),
     });
   }
+}
+
+/** Where an alert leads: hardware alerts open the hardware report. */
+export function alertView(a: Alert): View {
+  return a.kind === "hardware" ? { name: "hardware", hostId: a.hostId } : { name: "host", hostId: a.hostId };
 }
 
 // ------------------------------------------------------------------ ui
@@ -576,12 +660,45 @@ export async function startHardwareCheck(hostId: string, opts: { sudoPassword?: 
       openDialog({ kind: "hardwareSudo", hostId, reason: e.code === "sudo_wrong" ? "wrong" : "required" });
     } else if (e instanceof ApiError && e.code === "hardware_busy") {
       toast("info", t("hw.busy", { host: h.name }));
+      // Another check (scheduled, or from another window) is still running:
+      // show it rather than an idle page.
+      void refreshHwFleet();
     } else {
       toast("error", `${t("hw.failed")}: ${h.name}`, errorText(e));
     }
   } finally {
     hwPending.delete(hostId);
   }
+}
+
+/**
+ * Checks the hardware of every monitored server in the core, two at a time.
+ * Servers that need a sudo password are listed when it finishes instead of
+ * asking for each one.
+ */
+export async function startFleetCheck() {
+  try {
+    const run = await api.hardwareRunAll();
+    set({ hwRun: run, hwRunDismissed: null });
+  } catch (e) {
+    if (e instanceof ApiError && e.code === "run_active") {
+      set({ hwRun: e.details as HardwareRun });
+      return;
+    }
+    toast("error", t("fleet.failed"), errorText(e));
+  }
+}
+
+export async function cancelFleetCheck() {
+  try {
+    set({ hwRun: await api.hardwareRunCancel() });
+  } catch (e) {
+    toast("error", t("err.generic"), errorText(e));
+  }
+}
+
+export function dismissFleetRun() {
+  set((s) => ({ hwRunDismissed: s.hwRun?.id ?? null }));
 }
 
 // ------------------------------------------------------------------ helpers

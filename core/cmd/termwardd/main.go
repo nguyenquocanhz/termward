@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"time"
 
 	"github.com/nguyenquocanhz/termward/core/internal/app"
 )
@@ -30,6 +31,7 @@ func main() {
 		dev         = flag.Bool("dev", false, "development mode: port 7717 and token \"dev\" unless overridden")
 		watchStdin  = flag.Bool("watch-stdin", false, "exit when stdin is closed (used by the desktop app)")
 		showVersion = flag.Bool("version", false, "print version and exit")
+		devHWEvery  = flag.Duration("dev-hardware-interval", 0, "development: run scheduled hardware checks this often instead of daily/weekly (needs --dev)")
 	)
 	flag.Parse()
 	if *showVersion {
@@ -69,13 +71,18 @@ func main() {
 	if home, err := os.UserHomeDir(); err == nil {
 		extraKnown = append(extraKnown, filepath.Join(home, ".ssh", "known_hosts"))
 	}
-	inst, err := app.Start(ctx, app.Config{
+	cfg := app.Config{
 		DataDir:         *dataDir,
 		Addr:            *addr,
 		Token:           token,
 		Version:         version,
 		ExtraKnownHosts: extraKnown,
-	})
+	}
+	if *dev && *devHWEvery > 0 {
+		cfg.HardwareInterval = max(*devHWEvery, 5*time.Second)
+		log.Printf("scheduled hardware checks run every %s when enabled (development)", cfg.HardwareInterval)
+	}
+	inst, err := app.Start(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}

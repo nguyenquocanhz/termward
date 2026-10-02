@@ -33,6 +33,9 @@ type Config struct {
 	// OnAlert is called for every health alert, e.g. to post a native
 	// notification on mobile while the UI is in the background.
 	OnAlert func(health.Alert)
+	// HardwareInterval replaces the daily/weekly hardware check period
+	// (development only).
+	HardwareInterval time.Duration
 }
 
 type Instance struct {
@@ -80,6 +83,7 @@ func Start(parent context.Context, cfg Config) (*Instance, error) {
 	mon := health.NewMonitor(st, pool, publish)
 	srv := api.New(ctx, api.Deps{
 		Token: cfg.Token, Store: st, Keys: km, Secrets: sec, Pool: pool, Monitor: mon, Hub: hub,
+		HardwareInterval: cfg.HardwareInterval,
 	})
 	srv.Version = cfg.Version
 
@@ -96,6 +100,7 @@ func Start(parent context.Context, cfg Config) (*Instance, error) {
 		done:   make(chan struct{}),
 	}
 	go mon.Run(ctx)
+	go srv.RunHardwareScheduler(ctx)
 	go func() {
 		defer close(inst.done)
 		if err := inst.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

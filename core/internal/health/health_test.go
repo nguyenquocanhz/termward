@@ -249,3 +249,48 @@ func TestMonitorDownAndConfigErrors(t *testing.T) {
 		t.Fatalf("auth problems must not alert: %s %s %+v", s.Level, s.ErrorKind, rec.alerts)
 	}
 }
+
+func TestRaiseUsesTheAlertPipelineAndRespectsMute(t *testing.T) {
+	m, fr, rec, id := newMonitor(t)
+	fr.set(okOut, nil)
+	m.Poll(context.Background(), id)
+
+	title := Text{EN: "web has a critical hardware problem", VI: "web có lỗi phần cứng nghiêm trọng"}
+	body := Text{EN: "Disk /dev/sda is failing", VI: "Ổ /dev/sda sắp hỏng"}
+	a, ok := m.Raise(Alert{HostID: id, HostName: "web", From: LevelOK, To: LevelCrit, Kind: "hardware", Title: &title, Body: &body})
+	if !ok || a.ID == "" || a.At.IsZero() || a.Findings == nil {
+		t.Fatalf("raise: ok=%v %+v", ok, a)
+	}
+	if got := m.Alerts(); len(got) != 1 || got[0].ID != a.ID || got[0].Kind != "hardware" {
+		t.Fatalf("alert list: %+v", got)
+	}
+	rec.mu.Lock()
+	n := len(rec.alerts)
+	rec.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("alert events: %d", n)
+	}
+	if ti, b := AlertText(a, "vi"); ti != title.VI || b != body.VI {
+		t.Errorf("vi text: %q / %q", ti, b)
+	}
+	if ti, b := AlertText(a, "en"); ti != title.EN || b != body.EN {
+		t.Errorf("en text: %q / %q", ti, b)
+	}
+
+	m.Mute(id, time.Now().Add(time.Hour))
+	if _, ok := m.Raise(Alert{HostID: id, HostName: "web", To: LevelCrit, Kind: "hardware", Title: &title}); ok {
+		t.Fatal("a muted host must not raise hardware alerts")
+	}
+	if len(m.Alerts()) != 1 {
+		t.Fatal("muted alert was recorded")
+	}
+}
+
+func TestTextFallsBack(t *testing.T) {
+	if got := (Text{EN: "only en"}).In("vi"); got != "only en" {
+		t.Errorf("vi fallback: %q", got)
+	}
+	if got := (Text{VI: "chỉ vi"}).In("en"); got != "chỉ vi" {
+		t.Errorf("en fallback: %q", got)
+	}
+}

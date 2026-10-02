@@ -53,6 +53,40 @@ type Alert struct {
 	Findings []Finding `json:"findings"`
 	Error    string    `json:"error,omitempty"`
 	At       time.Time `json:"at"`
+
+	// Kind is "" for health alerts and "hardware" for alerts raised by a
+	// hardware check. Hardware alerts carry their own bilingual text because
+	// their findings come from Diagward, not from Finding codes.
+	Kind     string           `json:"kind,omitempty"`
+	Title    *Text            `json:"title,omitempty"`
+	Body     *Text            `json:"body,omitempty"`
+	Hardware []HardwareChange `json:"hardware,omitempty"`
+}
+
+// Text is a message in English and Vietnamese.
+type Text struct {
+	EN string `json:"en"`
+	VI string `json:"vi"`
+}
+
+// In picks the language ("vi…" or English), falling back to the other one.
+func (t Text) In(lang string) string {
+	if strings.HasPrefix(lang, "vi") && t.VI != "" || t.EN == "" {
+		return t.VI
+	}
+	return t.EN
+}
+
+// HardwareChange is one Diagward finding that appeared, got worse or was
+// resolved since the previous hardware check.
+type HardwareChange struct {
+	Change    string `json:"change"` // new | worse | resolved
+	ID        string `json:"id"`     // Diagward rule id, e.g. "disk.smart_failed"
+	Target    string `json:"target,omitempty"`
+	Component string `json:"component,omitempty"`
+	From      string `json:"from,omitempty"` // Diagward severity before ("" when absent)
+	To        string `json:"to"`             // Diagward severity now ("ok" when resolved)
+	Title     Text   `json:"title"`
 }
 
 // Runner is the part of sshx.Pool the monitor needs; tests substitute it.
@@ -313,6 +347,33 @@ func (m *Monitor) apply(hostID string, res sshx.Result, err error, took time.Dur
 	if alert != nil {
 		m.publish("alert", *alert)
 	}
+}
+
+// Raise records an alert that did not come from a health check (a hardware
+// check) and sends it down the same path as health alerts: the alert list,
+// the "alert" event and therefore native notifications. Alerts for a muted
+// host (planned maintenance) are dropped; it reports whether a was raised.
+func (m *Monitor) Raise(a Alert) (Alert, bool) {
+	now := time.Now().UTC()
+	m.mu.Lock()
+	if st, ok := m.states[a.HostID]; ok && st.status.MutedUntil != nil && now.Before(*st.status.MutedUntil) {
+		m.mu.Unlock()
+		return a, false
+	}
+	a.ID = store.NewID()
+	if a.At.IsZero() {
+		a.At = now
+	}
+	if a.Findings == nil {
+		a.Findings = []Finding{}
+	}
+	m.alerts = append(m.alerts, a)
+	if len(m.alerts) > maxAlerts {
+		m.alerts = slices.Clone(m.alerts[len(m.alerts)-maxAlerts:])
+	}
+	m.mu.Unlock()
+	m.publish("alert", a)
+	return a, true
 }
 
 func (m *Monitor) Snapshot() []Status {

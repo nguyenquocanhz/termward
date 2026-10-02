@@ -1,20 +1,53 @@
 import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { AlertTriangle, FileInput, KeyRound, Plus, RefreshCw, Server, SquareTerminal } from "lucide-react";
-import { api, type Host, type Level, type Status, type Thresholds } from "../lib/api";
-import { useT, type TKey } from "../lib/i18n";
+import {
+  AlertTriangle,
+  ChevronRight,
+  FileInput,
+  HardDrive,
+  KeyRound,
+  LoaderCircle,
+  Lock,
+  Plus,
+  RefreshCw,
+  Server,
+  SquareTerminal,
+  X,
+} from "lucide-react";
+import { api, type HardwareRun, type Host, type Level, type Status, type Thresholds } from "../lib/api";
+import { resolveLang, useT, type TKey } from "../lib/i18n";
 import { findingText, severity } from "../lib/findings";
+import { lt } from "../lib/hardware";
 import { ago, duration } from "../lib/format";
 import { caps } from "../lib/platform";
-import { alertBody, navigate, openDialog, openTerminal, useApp } from "../store";
+import {
+  alertBody,
+  alertView,
+  cancelFleetCheck,
+  dismissFleetRun,
+  navigate,
+  openDialog,
+  openTerminal,
+  startFleetCheck,
+  startHardwareCheck,
+  useApp,
+} from "../store";
 import { LevelBadge, Meter, StatusDot } from "../components/ui";
+import { HwBadge } from "../components/HwBadge";
 
 type Filter = "all" | "ok" | "attention" | "down" | "off";
 
 export function Overview() {
   const t = useT();
-  const { hosts, statuses, alerts, settings } = useApp(
-    useShallow((s) => ({ hosts: s.hosts, statuses: s.statuses, alerts: s.alerts, settings: s.settings })),
+  const { hosts, statuses, alerts, settings, hwRun, hwRunDismissed } = useApp(
+    useShallow((s) => ({
+      hosts: s.hosts,
+      statuses: s.statuses,
+      alerts: s.alerts,
+      settings: s.settings,
+      hwRun: s.hwRun,
+      hwRunDismissed: s.hwRunDismissed,
+    })),
   );
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -83,6 +116,17 @@ export function Overview() {
               {t("overview.importConfig")}
             </button>
           )}
+          {monitored > 0 && (
+            <button
+              className="btn"
+              title={t("fleet.checkAllHint")}
+              disabled={hwRun?.active}
+              onClick={() => void startFleetCheck()}
+            >
+              {hwRun?.active ? <LoaderCircle size={15} className="spin" /> : <HardDrive size={15} />}
+              {hwRun?.active ? `${hwRun.done}/${hwRun.hosts.length}` : t("fleet.checkAll")}
+            </button>
+          )}
           <button className="btn primary" onClick={() => openDialog({ kind: "host" })}>
             <Plus size={15} />
             {t("sidebar.newHost")}
@@ -101,6 +145,8 @@ export function Overview() {
             </button>
           ))}
       </div>
+
+      {hwRun && (hwRun.active || hwRunDismissed !== hwRun.id) && <FleetRun run={hwRun} />}
 
       {visible.length ? (
         <div className="host-grid">
@@ -128,12 +174,18 @@ export function Overview() {
           </div>
         ) : (
           alerts.slice(0, 8).map((a) => (
-            <div key={a.id} className="alert" onClick={() => navigate({ name: "host", hostId: a.hostId })}>
+            <div key={a.id} className="alert" onClick={() => navigate(alertView(a))}>
               <StatusDot level={a.to} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="row">
                   <strong>{a.hostName}</strong>
                   <LevelBadge level={a.to} />
+                  {a.kind === "hardware" && (
+                    <span className="badge">
+                      <HardDrive size={11} />
+                      {t("alert.hardware")}
+                    </span>
+                  )}
                 </div>
                 <div className="muted truncate" style={{ fontSize: 12.5 }}>
                   {alertBody(a) || " "}
@@ -231,10 +283,125 @@ function HostCard({
           <span />
         )}
         <span className="spacer" />
+        <HwBadge hostId={host.id} />
         {status?.checkedAt && status.checkedAt !== "0001-01-01T00:00:00Z" && (
           <span className="faint">{ago(status.checkedAt)}</span>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Progress, then the outcome, of "check hardware on all servers". */
+function FleetRun({ run }: { run: HardwareRun }) {
+  const t = useT();
+  const lang = resolveLang(useApp((s) => s.lang));
+  const { hosts, fleet } = useApp(useShallow((s) => ({ hosts: s.hosts, fleet: s.hwFleet })));
+  const name = (id: string) => hosts.find((h) => h.id === id)?.name ?? id;
+  const total = run.hosts.length;
+
+  if (run.active) {
+    const now = run.hosts.filter((id) => fleet[id]?.state === "running").map(name);
+    return (
+      <div className="card fleet-run">
+        <div className="fleet-run-head">
+          <LoaderCircle size={18} className="spin" style={{ color: "var(--accent)" }} />
+          <div className="grow">
+            <strong>{t("fleet.running")}</strong>
+            <div className="muted">
+              {t("fleet.progress", { done: run.done, total })}
+              {now.length > 0 && ` · ${t("fleet.now", { hosts: now.join(", ") })}`}
+            </div>
+          </div>
+          <button className="btn sm" onClick={() => void cancelFleetCheck()}>
+            {t("fleet.stop")}
+          </button>
+        </div>
+        <Meter value={total ? (run.done / total) * 100 : 0} warn={101} crit={101} />
+      </div>
+    );
+  }
+
+  const problems = run.ok
+    .map((id) => ({ id, sum: fleet[id]?.summary }))
+    .filter((x) => x.sum && (x.sum.headline === "crit" || x.sum.headline === "warn"))
+    .sort((a, b) => (a.sum!.headline === b.sum!.headline ? 0 : a.sum!.headline === "crit" ? -1 : 1));
+  const failed = Object.entries(run.failed);
+  return (
+    <div className="card fleet-run">
+      <div className="fleet-run-head">
+        <HardDrive size={18} style={{ color: problems.length ? "var(--warn)" : "var(--ok)" }} />
+        <div className="grow">
+          <strong>{t("fleet.doneTitle", { n: run.ok.length, total })}</strong>
+          {run.finishedAt && <div className="muted">{ago(run.finishedAt)}</div>}
+        </div>
+        <button className="icon-btn" aria-label={t("common.close")} onClick={dismissFleetRun}>
+          <X size={15} />
+        </button>
+      </div>
+
+      {problems.length > 0 ? (
+        <div className="fleet-group">
+          <div className="fleet-group-title">{t("fleet.problems")}</div>
+          {problems.map(({ id, sum }) => (
+            <button key={id} className="fleet-row" onClick={() => navigate({ name: "hardware", hostId: id })}>
+              <StatusDot level={sum!.headline as "crit" | "warn"} />
+              <strong className="truncate">{name(id)}</strong>
+              <span className="muted truncate grow">
+                {sum!.top ? lt(sum!.top, lang) : t(`hw.verdict.${sum!.headline}`)}
+              </span>
+              <ChevronRight size={14} className="faint" />
+            </button>
+          ))}
+        </div>
+      ) : (
+        run.ok.length > 0 && <p className="muted fleet-note">{t("fleet.allHealthy")}</p>
+      )}
+
+      {run.needsSudo.length > 0 && (
+        <div className="fleet-group">
+          <div className="fleet-group-title">
+            <Lock size={12} />
+            {t("fleet.needsSudo")}
+          </div>
+          <p className="muted fleet-note">{t("fleet.needsSudoHint")}</p>
+          {run.needsSudo.map((id) => (
+            <div key={id} className="fleet-row static">
+              <StatusDot level="unknown" />
+              <strong className="truncate grow">{name(id)}</strong>
+              <button
+                className="btn sm"
+                onClick={() => {
+                  navigate({ name: "hardware", hostId: id });
+                  void startHardwareCheck(id);
+                }}
+              >
+                {t("fleet.checkByHand")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {failed.length > 0 && (
+        <div className="fleet-group">
+          <div className="fleet-group-title">{t("fleet.couldNot")}</div>
+          {failed.map(([id, code]) => (
+            <button key={id} className="fleet-row" onClick={() => navigate({ name: "host", hostId: id })}>
+              <StatusDot level="down" />
+              <strong className="truncate">{name(id)}</strong>
+              <span className="muted truncate grow">{t(`hwerr.${code}` as TKey)}</span>
+              <ChevronRight size={14} className="faint" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {run.skipped.length > 0 && (
+        <p className="faint fleet-note">
+          {t("fleet.skipped")}: {run.skipped.map(name).join(", ")}
+        </p>
+      )}
     </div>
   );
 }

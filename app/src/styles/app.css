@@ -958,6 +958,7 @@ h2.section .muted {
   box-shadow: var(--shadow-sm);
   position: relative;
   text-align: left;
+  min-width: 0; /* let long footers truncate instead of widening the grid */
 }
 .host-card:hover {
   border-color: var(--border-strong);
@@ -1018,6 +1019,10 @@ h2.section .muted {
   color: var(--muted);
   min-height: 20px;
 }
+.host-card .foot > .faint {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .host-card .issue {
   font-size: 12.5px;
   display: flex;
@@ -1046,6 +1051,169 @@ h2.section .muted {
 }
 .alert-list .alert:hover {
   background: var(--surface-2);
+}
+
+/* Hardware verdict badge (host cards, sidebar) with a hover tooltip. */
+.hw-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.hw-badge:hover,
+.hw-badge:focus-visible {
+  background: var(--surface-3);
+  outline: none;
+}
+.hw-badge.ok {
+  color: var(--ok);
+}
+.hw-badge.info {
+  color: var(--info);
+}
+.hw-badge.warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.hw-badge.crit {
+  color: var(--crit);
+  background: var(--crit-soft);
+}
+.hw-badge.busy {
+  color: var(--accent);
+}
+.hw-badge .mono {
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.hw-badge.compact {
+  height: 18px;
+  padding: 0 4px;
+  cursor: inherit;
+}
+.hw-badge.compact:hover {
+  background: transparent;
+}
+.hw-badge.compact.warn,
+.hw-badge.compact.crit {
+  background: transparent;
+}
+.hw-tip {
+  display: none;
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 6px);
+  right: -4px;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  flex-direction: column;
+  gap: 2px;
+}
+.hw-tip-head {
+  font-weight: 620;
+}
+.hw-badge:not(.compact):hover .hw-tip,
+.hw-badge:not(.compact):focus-visible .hw-tip {
+  display: flex;
+}
+
+/* "Check hardware on all servers": progress, then the outcome. */
+.fleet-run {
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fleet-run-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fleet-run-head .grow {
+  flex: 1;
+  min-width: 0;
+}
+.fleet-run-head .muted {
+  font-size: 12.5px;
+}
+.fleet-group {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.fleet-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.fleet-note {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+}
+.fleet-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  width: calc(100% + 16px);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.fleet-row:hover {
+  background: var(--surface-2);
+}
+.fleet-row.static {
+  cursor: default;
+}
+.fleet-row.static:hover {
+  background: transparent;
+}
+.fleet-row strong {
+  font-weight: 580;
+  max-width: 40%;
+}
+.fleet-row .grow {
+  flex: 1;
+  min-width: 0;
+}
+.fleet-row strong.grow {
+  max-width: none;
 }
 
 /* ---------------------------------------------------------- host detail */

@@ -39,6 +39,20 @@ export function ago(iso: string | number | undefined): string {
   return rtf.format(-Math.round(s / 86400), "day");
 }
 
+/** Relative time that may lie in the future ("in 5 hours"). */
+export function relTime(iso: string | undefined): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!t) return "—";
+  const s = Math.round((t - Date.now()) / 1000);
+  const a = Math.abs(s);
+  const rtf = new Intl.RelativeTimeFormat(currentLang(), { numeric: "auto" });
+  if (a < 45) return rtf.format(s, "second");
+  if (a < 3600) return rtf.format(Math.round(s / 60), "minute");
+  if (a < 86400) return rtf.format(Math.round(s / 3600), "hour");
+  return rtf.format(Math.round(s / 86400), "day");
+}
+
 export function clock(iso: string): string {
   return new Date(iso).toLocaleTimeString(currentLang(), { hour: "2-digit", minute: "2-digit" });
 }

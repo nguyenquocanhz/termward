@@ -16,7 +16,16 @@ import {
 } from "lucide-react";
 import { useT } from "../lib/i18n";
 import { caps } from "../lib/platform";
-import { confirmQuit, navigate, openDialog, openTerminal, setPrefs, startHardwareCheck, useApp } from "../store";
+import {
+  confirmQuit,
+  navigate,
+  openDialog,
+  openTerminal,
+  setPrefs,
+  startFleetCheck,
+  startHardwareCheck,
+  useApp,
+} from "../store";
 import { StatusDot } from "./ui";
 
 interface Item {
@@ -78,6 +87,20 @@ export function Palette({ dark }: { dark: boolean }) {
         icon: <SquareTerminal size={15} />,
         run: () => navigate({ name: "terminals" }),
       },
+      ...(hosts.some((h) => h.monitor)
+        ? [
+            {
+              id: "a:hwall",
+              group: "actions" as const,
+              label: t("fleet.checkAllLong"),
+              icon: <HardDrive size={15} />,
+              run: () => {
+                navigate({ name: "overview" });
+                void startFleetCheck();
+              },
+            },
+          ]
+        : []),
       {
         id: "a:run",
         group: "actions",

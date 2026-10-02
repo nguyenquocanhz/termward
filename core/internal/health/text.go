@@ -10,6 +10,13 @@ import (
 // lang is "vi" or anything else for English.
 func AlertText(a Alert, lang string) (string, string) {
 	vi := strings.HasPrefix(lang, "vi")
+	if a.Kind == "hardware" && a.Title != nil {
+		body := ""
+		if a.Body != nil {
+			body = a.Body.In(lang)
+		}
+		return a.Title.In(lang), body
+	}
 	pick := func(en, v string) string {
 		if vi {
 			return v

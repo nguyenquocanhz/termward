@@ -260,18 +260,21 @@ func TestHardwareAsRoot(t *testing.T) {
 	var doneSeen bool
 	for len(events) > 0 {
 		var m struct {
-			Type string            `json:"type"`
-			Data map[string]string `json:"data"`
+			Type string         `json:"type"`
+			Data map[string]any `json:"data"`
 		}
-		json.Unmarshal(<-events, &m)
+		if err := json.Unmarshal(<-events, &m); err != nil {
+			t.Fatal(err)
+		}
 		switch m.Type {
 		case "hardware_progress":
 			if m.Data["hostId"] != e.host.ID {
 				t.Errorf("progress for %q", m.Data["hostId"])
 			}
-			progress = append(progress, m.Data["section"])
+			progress = append(progress, m.Data["section"].(string))
 		case "hardware_done":
-			doneSeen = m.Data["verdict"] != "" && m.Data["hostId"] == e.host.ID
+			sum, _ := m.Data["summary"].(map[string]any)
+			doneSeen = m.Data["verdict"] != "" && m.Data["hostId"] == e.host.ID && m.Data["source"] == "manual" && sum["ranAs"] == "root"
 		}
 	}
 	if strings.Join(progress, ",") != "meta.ident,meta.osrelease,meta.virt,meta.pm,meta.done" || !doneSeen {

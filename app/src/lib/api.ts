@@ -66,10 +66,14 @@ export interface Thresholds {
   loadPerCoreCrit: number;
 }
 
+export type HardwareInterval = "off" | "daily" | "weekly";
+
 export interface Settings {
   pollIntervalSec: number;
   notifications: boolean;
   thresholds: Thresholds;
+  /** Scheduled hardware checks of monitored servers. */
+  hardwareInterval: HardwareInterval;
 }
 
 export interface Finding {
@@ -149,6 +153,22 @@ export interface Alert {
   findings: Finding[];
   error?: string;
   at: string;
+  /** "hardware" for alerts raised by a hardware check (with their own text). */
+  kind?: "hardware";
+  title?: LText;
+  body?: LText;
+  hardware?: HardwareChange[];
+}
+
+/** A Diagward finding that appeared, got worse or was resolved since the last check. */
+export interface HardwareChange {
+  change: "new" | "worse" | "resolved";
+  id: string;
+  target?: string;
+  component?: string;
+  from?: Severity;
+  to: Severity;
+  title: LText;
 }
 
 export interface ExecResult {
@@ -299,6 +319,52 @@ export interface HardwareResult {
 
 export type HwReportFormat = "html" | "md" | "json";
 
+/** The gist of a host's last hardware result (for badges). */
+export interface HardwareSummary {
+  verdict: Severity;
+  headline: "crit" | "warn" | "ok" | "guest" | "none";
+  savedAt: string;
+  ranAs: HardwareResult["ranAs"];
+  partial?: boolean;
+  crit: number;
+  warn: number;
+  info: number;
+  top?: LText;
+}
+
+/** Fleet view of one host: last result, schedule and unattended-check state. */
+export interface HardwareHost {
+  hostId: string;
+  summary?: HardwareSummary;
+  /** queued/running: unattended check; manual: someone runs one by hand. */
+  state?: "queued" | "running" | "manual";
+  nextRun?: string;
+  /** Code of the last failed unattended check, e.g. "sudo_required". */
+  error?: string;
+  errorMsg?: string;
+  errorAt?: string;
+}
+
+/** One "check hardware on all servers" run. */
+export interface HardwareRun {
+  id: string;
+  active: boolean;
+  startedAt: string;
+  finishedAt?: string;
+  hosts: string[];
+  done: number;
+  ok: string[];
+  needsSudo: string[];
+  failed: Record<string, string>;
+  skipped: string[];
+}
+
+export interface HardwareFleet {
+  interval: HardwareInterval;
+  hosts: HardwareHost[];
+  run?: HardwareRun;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -425,6 +491,9 @@ export const api = {
   hardware: (id: string, body: { sudoPassword?: string; allowNoRoot?: boolean; sinceDays?: number }) =>
     req<HardwareResult>("POST", `/api/hosts/${id}/hardware`, body),
   lastHardware: (id: string) => req<HardwareResult>("GET", `/api/hosts/${id}/hardware`),
+  hardwareFleet: () => req<HardwareFleet>("GET", "/api/hardware"),
+  hardwareRunAll: (hostIds?: string[]) => req<HardwareRun>("POST", "/api/hardware/run-all", hostIds ? { hostIds } : {}),
+  hardwareRunCancel: () => req<HardwareRun>("POST", "/api/hardware/run-all/cancel"),
 
   status: () => req<{ statuses: Status[]; connected: string[] }>("GET", "/api/status"),
   alerts: () => req<Alert[]>("GET", "/api/alerts"),

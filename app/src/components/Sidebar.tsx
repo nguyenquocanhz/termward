@@ -19,6 +19,7 @@ import { confirmQuit, navigate, openDialog, openTerminal, setPrefs, useApp, type
 import { useT } from "../lib/i18n";
 import { severity } from "../lib/findings";
 import { StatusDot, modKey } from "./ui";
+import { HwBadge } from "./HwBadge";
 import type { Host } from "../lib/api";
 
 export function Sidebar({ dark }: { dark: boolean }) {
@@ -127,6 +128,7 @@ export function Sidebar({ dark }: { dark: boolean }) {
                   >
                     <StatusDot level={h.monitor ? (st?.level ?? "unknown") : "off"} checking={st?.checking} />
                     <span className="name truncate">{h.name}</span>
+                    <HwBadge hostId={h.id} compact />
                     {h.monitor && cpu !== undefined && cpu >= 0 && <span className="metric">{Math.round(cpu)}%</span>}
                   </button>
                 );

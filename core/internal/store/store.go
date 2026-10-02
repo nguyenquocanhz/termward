@@ -81,12 +81,23 @@ type Settings struct {
 	PollIntervalSec int        `json:"pollIntervalSec"`
 	Notifications   bool       `json:"notifications"`
 	Thresholds      Thresholds `json:"thresholds"`
+	// HardwareInterval schedules unattended hardware checks of monitored
+	// hosts: "off" (default), "daily" or "weekly".
+	HardwareInterval string `json:"hardwareInterval"`
 }
+
+// Hardware check schedules.
+const (
+	HardwareOff    = "off"
+	HardwareDaily  = "daily"
+	HardwareWeekly = "weekly"
+)
 
 func DefaultSettings() Settings {
 	return Settings{
-		PollIntervalSec: 30,
-		Notifications:   true,
+		PollIntervalSec:  30,
+		Notifications:    true,
+		HardwareInterval: HardwareOff,
 		Thresholds: Thresholds{
 			CPUWarn: 85, CPUCrit: 95,
 			MemWarn: 85, MemCrit: 95,
@@ -449,6 +460,11 @@ func normalizeSettings(v Settings) Settings {
 		v.PollIntervalSec = d.PollIntervalSec
 	}
 	v.PollIntervalSec = min(max(v.PollIntervalSec, 10), 3600)
+	switch v.HardwareInterval {
+	case HardwareDaily, HardwareWeekly:
+	default:
+		v.HardwareInterval = HardwareOff
+	}
 	fix := func(p *float64, def float64) {
 		if *p <= 0 {
 			*p = def

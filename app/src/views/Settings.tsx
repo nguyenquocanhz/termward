@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
-import { api, type Settings as SettingsT, type Thresholds } from "../lib/api";
+import { api, type HardwareInterval, type Settings as SettingsT, type Thresholds } from "../lib/api";
 import { useT, type TKey } from "../lib/i18n";
-import { errorText, setPrefs, toast, useApp, type LangPref, type ThemePref } from "../store";
+import { errorText, refreshHwFleet, setPrefs, toast, useApp, type LangPref, type ThemePref } from "../store";
 import { Segmented, Switch } from "../components/ui";
 import { isMobile, platform } from "../lib/platform";
 
@@ -11,6 +11,7 @@ const REPO = "https://github.com/nguyenquocanhz/termward";
 export function Settings() {
   const t = useT();
   const saved = useApp((s) => s.settings);
+  const needSudo = useApp((s) => Object.values(s.hwFleet).filter((h) => h.error === "sudo_required").length);
   const theme = useApp((s) => s.theme);
   const lang = useApp((s) => s.lang);
   const [draft, setDraft] = useState<SettingsT | null>(saved);
@@ -29,6 +30,7 @@ export function Settings() {
       const s = await api.saveSettings(next);
       useApp.setState({ settings: s });
       toast("success", t("common.saved"));
+      void refreshHwFleet(); // next scheduled hardware checks
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -73,6 +75,21 @@ export function Settings() {
               </option>
             ))}
           </select>
+        </SettingRow>
+        <SettingRow
+          title={t("set.hwInterval")}
+          hint={t("set.hwIntervalHint")}
+          note={draft.hardwareInterval !== "off" && needSudo > 0 ? t("set.hwNeedsSudo", { n: needSudo }) : undefined}
+        >
+          <Segmented<HardwareInterval>
+            value={draft.hardwareInterval ?? "off"}
+            onChange={(v) => setDraft({ ...draft, hardwareInterval: v })}
+            options={[
+              { value: "off", label: t("set.hwOff") },
+              { value: "daily", label: t("set.hwDaily") },
+              { value: "weekly", label: t("set.hwWeekly") },
+            ]}
+          />
         </SettingRow>
         <SettingRow title={t("set.notifications")} hint={t("set.notificationsHint")} last>
           <Switch on={draft.notifications} onChange={(v) => setDraft({ ...draft, notifications: v })} />
@@ -230,11 +247,14 @@ function PlatformSettings() {
 function SettingRow({
   title,
   hint,
+  note,
   children,
   last,
 }: {
   title: string;
   hint?: string;
+  /** A warning about the current value, shown under the hint. */
+  note?: string;
   children: React.ReactNode;
   last?: boolean;
 }) {
@@ -247,6 +267,7 @@ function SettingRow({
             {hint}
           </div>
         )}
+        {note && <div style={{ fontSize: 12.5, color: "var(--warn)", marginTop: 4 }}>{note}</div>}
       </div>
       {children}
     </div>

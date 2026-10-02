@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nguyenquocanhz/termward/core/internal/health"
 	"github.com/nguyenquocanhz/termward/core/internal/keys"
@@ -33,8 +34,9 @@ type Server struct {
 
 	ctx     context.Context // cancelled on shutdown; parent of background jobs
 	jobs    sync.Map        // exec job id -> context.CancelFunc
-	hwBusy  sync.Map        // host id -> running hardware check
+	hwBusy  sync.Map        // host id -> hwSource of the running hardware check
 	dataDir string          // last hardware results live in <dataDir>/hardware
+	hw      *hwScheduler    // scheduled and fleet-wide hardware checks
 }
 
 type Deps struct {
@@ -45,13 +47,19 @@ type Deps struct {
 	Pool    *sshx.Pool
 	Monitor *health.Monitor
 	Hub     *Hub
+	// HardwareInterval replaces the daily/weekly hardware check period when
+	// set (development and end-to-end tests).
+	HardwareInterval time.Duration
 }
 
 func New(ctx context.Context, d Deps) *Server {
-	return &Server{
+	s := &Server{
 		token: d.Token, store: d.Store, keys: d.Keys, secrets: d.Secrets,
 		pool: d.Pool, monitor: d.Monitor, hub: d.Hub, ctx: ctx, dataDir: d.Store.Dir(),
 	}
+	s.hw = newHWScheduler(s)
+	s.hw.override = d.HardwareInterval
+	return s
 }
 
 func (s *Server) Handler() http.Handler {
@@ -70,6 +78,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/hosts/{id}/hardware", s.runHardware)
 	mux.HandleFunc("GET /api/hosts/{id}/hardware", s.lastHardware)
 	mux.HandleFunc("GET /api/hosts/{id}/hardware/report", s.hardwareReport)
+	mux.HandleFunc("GET /api/hardware", s.hardwareFleet)
+	mux.HandleFunc("POST /api/hardware/run-all", s.hardwareRunAll)
+	mux.HandleFunc("POST /api/hardware/run-all/cancel", s.hardwareRunCancel)
 
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("GET /api/alerts", s.alerts)

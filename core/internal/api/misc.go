@@ -47,5 +47,6 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.monitor.Wake()
+	s.hw.Wake()
 	writeJSON(w, http.StatusOK, v)
 }

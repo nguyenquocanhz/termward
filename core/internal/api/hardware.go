@@ -24,6 +24,7 @@ import (
 	"github.com/nguyenquocanhz/diagward/report"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/nguyenquocanhz/termward/core/internal/sshx"
 	"github.com/nguyenquocanhz/termward/core/internal/store"
 )
 
@@ -131,23 +132,18 @@ func (s *Server) runHardware(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid", err.Error(), nil)
 		return
 	}
-	if _, busy := s.hwBusy.LoadOrStore(id, struct{}{}); busy {
-		writeError(w, http.StatusConflict, "hardware_busy", "a hardware check is already running on this server", nil)
-		return
-	}
-	defer s.hwBusy.Delete(id)
-	setVersionsOnce.Do(setDiagwardVersions)
 
 	// The check outlives a closed UI request on purpose: the result is saved
 	// and the UI can read it later. It stops when the core shuts down.
 	ctx, cancel := context.WithTimeout(s.ctx, hardwareTimeout)
 	defer cancel()
 
-	res, err := s.collectHardware(ctx, h, in)
+	res, err := s.runCheck(ctx, h, in, srcManual)
 	if err != nil {
-		s.hub.Publish("hardware_done", map[string]string{"hostId": id, "error": errorCode(err)})
 		var se *sudoError
 		switch {
+		case errors.Is(err, errHardwareBusy):
+			writeError(w, http.StatusConflict, "hardware_busy", "a hardware check is already running on this server", nil)
 		case errors.As(err, &se) && se.wrong:
 			writeError(w, http.StatusForbidden, "sudo_wrong", "the sudo password was rejected", nil)
 		case errors.As(err, &se):
@@ -160,30 +156,85 @@ func (s *Server) runHardware(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	// The host may have been deleted while the check ran.
-	if _, err := s.store.Host(id); err == nil {
-		if err := saveHardware(s.dataDir, id, res); err != nil {
-			writeError(w, http.StatusInternalServerError, "hardware_failed", "cannot save the result: "+err.Error(), nil)
-			return
-		}
-	}
-	s.hub.Publish("hardware_done", map[string]string{
-		"hostId": id, "verdict": res.Report.Verdict.String(), "savedAt": res.SavedAt.Format(time.RFC3339),
-	})
 	writeJSON(w, http.StatusOK, respondHardware(res))
 }
 
-func errorCode(err error) string {
-	var se *sudoError
+// runCheck runs one hardware check end to end, for a person or for the
+// scheduler: collect, save, compare with the previous result (raising
+// alerts), and tell every UI. Only one check runs per host at a time.
+func (s *Server) runCheck(ctx context.Context, h store.Host, in hardwareInput, src hwSource) (*HardwareResult, error) {
+	if _, busy := s.hwBusy.LoadOrStore(h.ID, src); busy {
+		return nil, errHardwareBusy
+	}
+	defer s.hwBusy.Delete(h.ID)
+	setVersionsOnce.Do(setDiagwardVersions)
+	s.hub.Publish("hardware_start", map[string]string{"hostId": h.ID, "source": string(src)})
+	if src == srcManual {
+		s.hw.publishHost(h.ID)
+		defer s.hw.publishHost(h.ID)
+	}
+
+	prev, _ := loadHardware(s.dataDir, h.ID)
+	res, err := s.collectHardware(ctx, h, in)
+	if err == nil && res.Partial && s.ctx.Err() != nil {
+		// Cut off because Termward is quitting: keep the last complete
+		// result rather than replacing it (and the alert baseline) with this.
+		err = context.Canceled
+	}
+	if err != nil {
+		s.hub.Publish("hardware_done", map[string]string{"hostId": h.ID, "source": string(src), "error": hwErrorCode(err)})
+		return nil, err
+	}
+	// The host may have been deleted while the check ran.
+	if cur, err := s.store.Host(h.ID); err == nil {
+		if err := saveHardware(s.dataDir, h.ID, res); err != nil {
+			err = hwFailf("cannot save the result: %v", err)
+			s.hub.Publish("hardware_done", map[string]string{"hostId": h.ID, "source": string(src), "error": "hardware_failed"})
+			return nil, err
+		}
+		s.hw.recorded(h.ID, res, src)
+		s.alertHardware(cur, prev, res)
+	}
+	s.hub.Publish("hardware_done", map[string]any{
+		"hostId": h.ID, "source": string(src), "verdict": res.Report.Verdict.String(),
+		"savedAt": res.SavedAt.Format(time.RFC3339), "summary": summarize(res),
+	})
+	return res, nil
+}
+
+// hwErrorCode is the short code the UI translates for a failed check.
+func hwErrorCode(err error) string {
+	var (
+		se      *sudoError
+		unknown *sshx.UnknownHostError
+		changed *sshx.HostKeyChangedError
+		authReq *sshx.AuthRequiredError
+	)
 	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, errHardwareBusy):
+		return "hardware_busy"
 	case errors.As(err, &se) && se.wrong:
 		return "sudo_wrong"
 	case errors.As(err, &se):
 		return "sudo_required"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
+	case errors.Is(err, errHardware):
+		return "hardware_failed"
+	case errors.As(err, &unknown):
+		return "unknown_host"
+	case errors.As(err, &changed):
+		return "host_key_changed"
+	case errors.As(err, &authReq):
+		return "auth_required"
+	case errors.Is(err, sshx.ErrAuthRejected):
+		return "auth_failed"
+	case errors.Is(err, store.ErrNotFound):
+		return "not_found"
 	}
-	return "hardware_failed"
+	return "connect_failed"
 }
 
 func (s *Server) lastHardware(w http.ResponseWriter, r *http.Request) {
