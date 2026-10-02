@@ -45,6 +45,10 @@ script sent over the SSH connection you already have.
 </p>
 
 <p align="center">
+  <img src="docs/hardware-light.png" alt="Hardware check: verdict, components and what to do" width="880" />
+</p>
+
+<p align="center">
   <img src="docs/phone-overview.png" alt="Phone: overview" width="240" />
   &nbsp;
   <img src="docs/phone-host.png" alt="Phone: server details" width="240" />
