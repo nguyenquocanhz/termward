@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import type { Level } from "../lib/api";
 import { useT } from "../lib/i18n";
+import { ago } from "../lib/format";
 import { levelLabelKey } from "../lib/findings";
 
 export interface MenuItem {
@@ -61,6 +62,22 @@ export function Menu({ label, icon, items }: { label: string; icon: ReactNode; i
 
 export function StatusDot({ level, checking }: { level: Level | "off"; checking?: boolean }) {
   return <span className={`dot ${level}${checking ? " checking" : ""}`} aria-hidden />;
+}
+
+/**
+ * The "live stream" affordance that replaces "Checked Ns ago" while a host is
+ * streaming: a gently pulsing dot, the word "Live", and the age of the newest
+ * point. `at` is epoch seconds.
+ */
+export function LiveTag({ at }: { at?: number }) {
+  const t = useT();
+  return (
+    <span className="live-tag" title={t("m.liveHint")}>
+      <span className="dot live" aria-hidden />
+      {t("m.live")}
+      {at !== undefined && <span className="faint">· {ago(at * 1000)}</span>}
+    </span>
+  );
 }
 
 export function LevelBadge({

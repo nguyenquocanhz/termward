@@ -19,6 +19,7 @@ import { resolveLang, useT, type TKey } from "../lib/i18n";
 import { findingText, severity } from "../lib/findings";
 import { lt } from "../lib/hardware";
 import { ago, duration } from "../lib/format";
+import { useHostMetrics } from "../lib/metrics";
 import { caps } from "../lib/platform";
 import {
   alertBody,
@@ -32,7 +33,7 @@ import {
   startHardwareCheck,
   useApp,
 } from "../store";
-import { LevelBadge, Meter, StatusDot } from "../components/ui";
+import { LevelBadge, LiveTag, Meter, StatusDot } from "../components/ui";
 import { HwBadge } from "../components/HwBadge";
 import { openHostMenu } from "../components/hostMenu";
 
@@ -216,6 +217,7 @@ function HostCard({
 }) {
   const t = useT();
   const s = status?.sample;
+  const mv = useHostMetrics(host.id, status);
   const top = status?.findings.find((f) => f.level !== "info");
   const disk = s?.disks.reduce((m, d) => Math.max(m, d.percent), 0) ?? -1;
 
@@ -248,8 +250,8 @@ function HostCard({
 
       {s && th ? (
         <div className="metrics">
-          <Mini label={t("m.cpu")} value={s.cpuPercent} warn={th.cpuWarn} crit={th.cpuCrit} />
-          <Mini label={t("m.mem")} value={s.memPercent} warn={th.memWarn} crit={th.memCrit} />
+          <Mini label={t("m.cpu")} value={mv.cpu} warn={th.cpuWarn} crit={th.cpuCrit} />
+          <Mini label={t("m.mem")} value={mv.mem} warn={th.memWarn} crit={th.memCrit} />
           <Mini label={t("m.disk")} value={disk} warn={th.diskWarn} crit={th.diskCrit} />
         </div>
       ) : (
@@ -282,15 +284,18 @@ function HostCard({
           </span>
         ) : s ? (
           <span className="truncate">
-            {t("m.uptime")} {duration(s.uptimeSec)} · {t("m.load")} {s.load[0].toFixed(2)}
+            {t("m.uptime")} {duration(s.uptimeSec)} · {t("m.load")} {mv.load[0].toFixed(2)}
           </span>
         ) : (
           <span />
         )}
         <span className="spacer" />
         <HwBadge hostId={host.id} />
-        {status?.checkedAt && status.checkedAt !== "0001-01-01T00:00:00Z" && (
-          <span className="faint">{ago(status.checkedAt)}</span>
+        {mv.live ? (
+          <LiveTag at={mv.at} />
+        ) : (
+          status?.checkedAt &&
+          status.checkedAt !== "0001-01-01T00:00:00Z" && <span className="faint">{ago(status.checkedAt)}</span>
         )}
       </div>
     </div>

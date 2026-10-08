@@ -303,9 +303,23 @@ button {
   min-width: 0;
 }
 .host-row .metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11.5px;
   color: var(--faint);
   font-variant-numeric: tabular-nums;
+}
+.host-row .metric.live {
+  color: var(--ok);
+}
+.dot.sm {
+  width: 5px;
+  height: 5px;
+}
+/* The sidebar is a dense list: a solid dot reads calmer than a pulse ring. */
+.host-row .metric .dot.live::after {
+  content: none;
 }
 
 .sidebar-foot {
@@ -760,6 +774,34 @@ h2.section .muted {
 }
 .dot.checking {
   animation: blink 1.2s ease-in-out infinite;
+}
+.dot.live {
+  background: var(--ok);
+}
+.dot.live::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--ok);
+  opacity: 0;
+  animation: pulse 2s var(--ease) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot.live::after {
+    animation: none;
+  }
+}
+.live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  color: var(--ok);
+  font-weight: 540;
+}
+.live-tag .faint {
+  font-weight: 400;
 }
 @keyframes pulse {
   0% {

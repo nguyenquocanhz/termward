@@ -20,10 +20,11 @@ import logo from "../../assets/logo-64.png";
 import { confirmQuit, navigate, openDialog, openTerminal, setPrefs, useApp, type View } from "../store";
 import { useT } from "../lib/i18n";
 import { severity } from "../lib/findings";
+import { useHostMetrics } from "../lib/metrics";
 import { StatusDot, modKey } from "./ui";
 import { HwBadge } from "./HwBadge";
 import { openHostMenu } from "./hostMenu";
-import type { Host } from "../lib/api";
+import type { Host, Status } from "../lib/api";
 
 export function Sidebar({ dark }: { dark: boolean }) {
   const t = useT();
@@ -137,58 +138,81 @@ export function Sidebar({ dark }: { dark: boolean }) {
           {groups.map(([group, list]) => (
             <div key={group || "_"}>
               {(groups.length > 1 || group) && <div className="host-group">{group || t("sidebar.ungrouped")}</div>}
-              {list.map((h) => {
-                const st = statuses[h.id];
-                const cpu = st?.sample?.cpuPercent;
-                return (
-                  <button
-                    key={h.id}
-                    className={`host-row${selectedHost === h.id ? " active" : ""}`}
-                    onClick={() => navigate({ name: "host", hostId: h.id })}
-                    onDoubleClick={() => void openTerminal(h.id)}
-                    onContextMenu={(e) => openHostMenu(e, h)}
-                    title={`${h.user}@${h.address}`}
-                  >
-                    <StatusDot level={h.monitor ? (st?.level ?? "unknown") : "off"} checking={st?.checking} />
-                    <span className="name truncate">{h.name}</span>
-                    <HwBadge hostId={h.id} compact />
-                    {h.monitor && cpu !== undefined && cpu >= 0 && <span className="metric">{Math.round(cpu)}%</span>}
-                  </button>
-                );
-              })}
+              {list.map((h) => (
+                <HostRow key={h.id} host={h} status={statuses[h.id]} active={selectedHost === h.id} />
+              ))}
             </div>
           ))}
         </div>
       </div>
 
-      <div className="sidebar-foot">
-        {online ? (
-          <>
-            <Activity size={14} />
-            <span className="truncate">
-              {t("sidebar.watching", { n: monitored.length, s: settings?.pollIntervalSec ?? 30 })}
-            </span>
-          </>
-        ) : (
-          <>
-            <LoaderCircle size={14} className="spin" />
-            <span>{t("sidebar.offline")}</span>
-          </>
-        )}
-        <span className="spacer" />
-        <button
-          className="icon-btn"
-          title={t("pal.toggleTheme")}
-          onClick={() => setPrefs({ theme: dark ? "light" : "dark" })}
-        >
-          {dark ? <Sun size={15} /> : <Moon size={15} />}
-        </button>
-        {window.termward?.quit && (
-          <button className="icon-btn" title={t("app.quit")} onClick={confirmQuit}>
-            <Power size={15} />
-          </button>
-        )}
-      </div>
+      <SidebarFoot online={online} monitored={monitored.length} pollSec={settings?.pollIntervalSec ?? 30} dark={dark} />
     </aside>
+  );
+}
+
+/** One server in the sidebar list; its % updates live when a stream is active. */
+function HostRow({ host, status, active }: { host: Host; status?: Status; active: boolean }) {
+  const mv = useHostMetrics(host.id, status);
+  return (
+    <button
+      className={`host-row${active ? " active" : ""}`}
+      onClick={() => navigate({ name: "host", hostId: host.id })}
+      onDoubleClick={() => void openTerminal(host.id)}
+      onContextMenu={(e) => openHostMenu(e, host)}
+      title={`${host.user}@${host.address}`}
+    >
+      <StatusDot level={host.monitor ? (status?.level ?? "unknown") : "off"} checking={status?.checking} />
+      <span className="name truncate">{host.name}</span>
+      <HwBadge hostId={host.id} compact />
+      {host.monitor && mv.cpu >= 0 && (
+        <span className={`metric${mv.live ? " live" : ""}`}>
+          {mv.live && <span className="dot live sm" aria-hidden />}
+          {Math.round(mv.cpu)}%
+        </span>
+      )}
+    </button>
+  );
+}
+
+function SidebarFoot({
+  online,
+  monitored,
+  pollSec,
+  dark,
+}: {
+  online: boolean;
+  monitored: number;
+  pollSec: number;
+  dark: boolean;
+}) {
+  const t = useT();
+  return (
+    <div className="sidebar-foot">
+      {online ? (
+        <>
+          <Activity size={14} />
+          <span className="truncate">{t("sidebar.watching", { n: monitored, s: pollSec })}</span>
+        </>
+      ) : (
+        <>
+          <LoaderCircle size={14} className="spin" />
+          <span>{t("sidebar.offline")}</span>
+        </>
+      )}
+      <span className="spacer" />
+      <button
+        className="icon-btn"
+        title={t("pal.toggleTheme")}
+        onClick={() => setPrefs({ theme: dark ? "light" : "dark" })}
+      >
+        {dark ? <Sun size={15} /> : <Moon size={15} />}
+      </button>
+      {window.termward?.quit && (
+        <button className="icon-btn" title={t("app.quit")} onClick={confirmQuit}>
+          <Power size={15} />
+        </button>
+      )}
+    </div>
   );
 }

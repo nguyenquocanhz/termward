@@ -129,6 +129,28 @@ export interface Point {
   load: number;
 }
 
+/**
+ * A live metrics tick streamed over the events socket ({type:"metric"}) for a
+ * connected Linux host with monitoring on. The fast CPU/mem/load/swap fields
+ * update between the 30s health polls; cpu is null until two samples exist.
+ */
+export interface Metric {
+  hostId: string;
+  /** Epoch seconds. */
+  at: number;
+  cpu: number | null;
+  mem: number;
+  memUsedKb: number;
+  memTotalKb: number;
+  load1: number;
+  load5: number;
+  load15: number;
+  swapUsedKb: number;
+  swapTotalKb: number;
+  procsRunning: number;
+  cores: number;
+}
+
 export interface Status {
   hostId: string;
   level: Level;
@@ -141,6 +163,8 @@ export interface Status {
   error?: string;
   errorKind?: string;
   history: Point[];
+  /** High-resolution ring (last ~120 live points) to backfill the sparkline. */
+  live?: Point[];
   mutedUntil?: string;
 }
 

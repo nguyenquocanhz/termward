@@ -16,6 +16,7 @@ import {
 import { api } from "../lib/api";
 import { useT, type TKey } from "../lib/i18n";
 import { findingText } from "../lib/findings";
+import { useHostMetrics } from "../lib/metrics";
 import { stripHost } from "../lib/util";
 import { ago, bytesKb, clock, duration, pct } from "../lib/format";
 import {
@@ -29,7 +30,7 @@ import {
   toast,
   useApp,
 } from "../store";
-import { LevelBadge, Menu, Meter, Sparkline, StatusDot } from "../components/ui";
+import { LevelBadge, LiveTag, Menu, Meter, Sparkline, StatusDot } from "../components/ui";
 import { HardwareCard } from "./Hardware";
 
 export function HostDetail({ hostId }: { hostId: string }) {
@@ -44,6 +45,7 @@ export function HostDetail({ hostId }: { hostId: string }) {
       hosts: s.hosts,
     })),
   );
+  const mv = useHostMetrics(hostId, status);
   if (!host) {
     return (
       <div className="page">
@@ -54,9 +56,9 @@ export function HostDetail({ hostId }: { hostId: string }) {
 
   const s = status?.sample;
   const th = settings?.thresholds;
+  const cores = mv.cores || (s?.cpus ?? 0);
   const level = host.monitor ? (status?.level ?? "unknown") : "off";
   const findings = (status?.findings ?? []).filter((f) => f.code !== "unreachable");
-  const history = status?.history ?? [];
   const key = keys.find((k) => k.id === host.keyId);
   const jump = hosts.find((h) => h.id === host.jumpHostId);
 
@@ -206,32 +208,32 @@ export function HostDetail({ hostId }: { hostId: string }) {
             <div className="card stat">
               <span className="k">{t("m.cpu")}</span>
               <span className="v">
-                {s.cpuPercent >= 0 ? Math.round(s.cpuPercent) : "—"}
+                {mv.cpu >= 0 ? Math.round(mv.cpu) : "—"}
                 <small>%</small>
               </span>
-              <span className="s">{t("m.cores", { n: s.cpus })}</span>
-              <Sparkline values={history.map((p) => p.cpu)} color={colorFor(s.cpuPercent, th.cpuWarn, th.cpuCrit)} />
+              <span className="s">{t("m.cores", { n: cores })}</span>
+              <Sparkline values={mv.points.map((p) => p.cpu)} color={colorFor(mv.cpu, th.cpuWarn, th.cpuCrit)} />
             </div>
             <div className="card stat">
               <span className="k">{t("m.mem")}</span>
               <span className="v">
-                {s.memPercent >= 0 ? Math.round(s.memPercent) : "—"}
+                {mv.mem >= 0 ? Math.round(mv.mem) : "—"}
                 <small>%</small>
               </span>
               <span className="s">
-                {t("m.of", { used: bytesKb(s.memUsedKb), total: bytesKb(s.memTotalKb) })}
-                {s.swapTotalKb > 0 && ` · ${t("m.swap", { v: pct((s.swapUsedKb / s.swapTotalKb) * 100) })}`}
+                {t("m.of", { used: bytesKb(mv.memUsedKb), total: bytesKb(mv.memTotalKb) })}
+                {mv.swapTotalKb > 0 && ` · ${t("m.swap", { v: pct((mv.swapUsedKb / mv.swapTotalKb) * 100) })}`}
               </span>
-              <Sparkline values={history.map((p) => p.mem)} color={colorFor(s.memPercent, th.memWarn, th.memCrit)} />
+              <Sparkline values={mv.points.map((p) => p.mem)} color={colorFor(mv.mem, th.memWarn, th.memCrit)} />
             </div>
             <div className="card stat">
               <span className="k">{t("m.load")}</span>
-              <span className="v">{s.load[0].toFixed(2)}</span>
+              <span className="v">{mv.load[0].toFixed(2)}</span>
               <span className="s">
-                5m {s.load[1].toFixed(2)} · 15m {s.load[2].toFixed(2)} ·{" "}
-                {t("m.perCore", { v: s.cpus ? (s.load[1] / s.cpus).toFixed(2) : "—" })}
+                5m {mv.load[1].toFixed(2)} · 15m {mv.load[2].toFixed(2)} ·{" "}
+                {t("m.perCore", { v: cores ? (mv.load[1] / cores).toFixed(2) : "—" })}
               </span>
-              <Sparkline values={history.map((p) => p.load)} max={Math.max(s.cpus, 1)} color="var(--info)" />
+              <Sparkline values={mv.points.map((p) => p.load)} max={Math.max(cores, 1)} color="var(--info)" />
             </div>
             <div className="card stat">
               <span className="k">{t("m.uptime")}</span>
@@ -242,7 +244,7 @@ export function HostDetail({ hostId }: { hostId: string }) {
                 {t("m.latency")} {s.latencyMs} ms
               </span>
               <span className="s" style={{ marginTop: "auto" }}>
-                {t("card.checked", { ago: ago(status?.checkedAt) })}
+                {mv.live ? <LiveTag at={mv.at} /> : t("card.checked", { ago: ago(status?.checkedAt) })}
               </span>
             </div>
           </div>

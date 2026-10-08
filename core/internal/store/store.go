@@ -84,6 +84,9 @@ type Settings struct {
 	// HardwareInterval schedules unattended hardware checks of monitored
 	// hosts: "off" (default), "daily" or "weekly".
 	HardwareInterval string `json:"hardwareInterval"`
+	// MetricsIntervalSec is the live-metrics tick (seconds) for the real-time
+	// CPU/mem/load stream over SSH. Default 2, clamped to [1, 60].
+	MetricsIntervalSec int `json:"metricsIntervalSec"`
 }
 
 // Hardware check schedules.
@@ -95,9 +98,10 @@ const (
 
 func DefaultSettings() Settings {
 	return Settings{
-		PollIntervalSec:  30,
-		Notifications:    true,
-		HardwareInterval: HardwareOff,
+		PollIntervalSec:    30,
+		Notifications:      true,
+		HardwareInterval:   HardwareOff,
+		MetricsIntervalSec: 2,
 		Thresholds: Thresholds{
 			CPUWarn: 85, CPUCrit: 95,
 			MemWarn: 85, MemCrit: 95,
@@ -460,6 +464,10 @@ func normalizeSettings(v Settings) Settings {
 		v.PollIntervalSec = d.PollIntervalSec
 	}
 	v.PollIntervalSec = min(max(v.PollIntervalSec, 10), 3600)
+	if v.MetricsIntervalSec == 0 {
+		v.MetricsIntervalSec = d.MetricsIntervalSec
+	}
+	v.MetricsIntervalSec = min(max(v.MetricsIntervalSec, 1), 60)
 	switch v.HardwareInterval {
 	case HardwareDaily, HardwareWeekly:
 	default:

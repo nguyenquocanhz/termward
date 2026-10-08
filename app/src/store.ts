@@ -17,6 +17,8 @@ import {
   type HostKeyDetails,
   type Key,
   type Level,
+  type Metric,
+  type Point,
   type Settings,
   type Snippet,
   type Status,
@@ -114,6 +116,17 @@ export interface HwState {
 export type ThemePref = "system" | "light" | "dark";
 export type LangPref = "auto" | "en" | "vi";
 
+/**
+ * A host's live metrics: a high-resolution ring for sparklines, the most
+ * recent full tick, and when it arrived (epoch seconds). `latest` is absent
+ * when the ring was only seeded from /api/status and no tick has arrived yet.
+ */
+export interface LiveState {
+  points: Point[];
+  latest?: Metric;
+  at: number;
+}
+
 interface AppState {
   booted: boolean;
   bootError?: string;
@@ -124,6 +137,8 @@ interface AppState {
   settings: Settings | null;
   statuses: Record<string, Status>;
   connected: Record<string, boolean>;
+  /** Live metrics per host, fed by the "metric" event and seeded from status. */
+  live: Record<string, LiveState>;
   alerts: Alert[];
   view: View;
   tabs: TermTab[];
@@ -175,6 +190,7 @@ export const useApp = create<AppState>(() => ({
   settings: null,
   statuses: {},
   connected: {},
+  live: {},
   alerts: [],
   view: { name: "overview" },
   tabs: [],
@@ -237,6 +253,7 @@ export async function boot(): Promise<void> {
       cloud,
       booted: true,
     });
+    seedLive(status.statuses);
     if (fleet) syncHwRunning(fleet.hosts);
     subscribeEvents(onEvent, (online) => {
       set({ online });
@@ -307,15 +324,84 @@ export async function refreshStatus() {
     statuses: Object.fromEntries(s.statuses.map((x) => [x.hostId, x])),
     connected: Object.fromEntries(s.connected.map((id) => [id, true])),
   });
+  seedLive(s.statuses);
+}
+
+// ------------------------------------------------------------------ live metrics
+
+/** How many high-resolution points to keep per host (~4 min at 2s). */
+const LIVE_CAP = 120;
+
+/**
+ * Metric ticks arriving in the same animation frame are coalesced into one
+ * store write (last tick wins per host), so a burst from many hosts — or the
+ * flood right after a reconnect — stays smooth instead of thrashing React.
+ */
+let metricBuf = new Map<string, Metric>();
+let metricRaf = false;
+const schedule: (cb: () => void) => void =
+  typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => window.setTimeout(cb, 16);
+
+function flushMetrics() {
+  metricRaf = false;
+  const buf = metricBuf;
+  if (buf.size === 0) return;
+  metricBuf = new Map();
+  set((st) => {
+    const live = { ...st.live };
+    for (const m of buf.values()) {
+      const prev = live[m.hostId];
+      const pt: Point = { t: m.at, cpu: m.cpu ?? -1, mem: m.mem, load: m.load1 };
+      const points = prev ? [...prev.points, pt] : [pt];
+      if (points.length > LIVE_CAP) points.splice(0, points.length - LIVE_CAP);
+      live[m.hostId] = { points, latest: m, at: m.at };
+    }
+    return { live };
+  });
+}
+
+function pushMetric(m: Metric) {
+  if (!m || typeof m.hostId !== "string") return;
+  metricBuf.set(m.hostId, m); // last tick in this frame wins
+  if (!metricRaf) {
+    metricRaf = true;
+    schedule(flushMetrics);
+  }
+}
+
+/**
+ * Seeds the live ring from the `live` array that /api/status now carries, so a
+ * freshly opened (or reconnected) UI can draw the sparkline at once. Skips a
+ * host whose in-memory ring is already as fresh, so live ticks are not undone.
+ */
+function seedLive(statuses: Status[]) {
+  set((st) => {
+    let changed = false;
+    const live = { ...st.live };
+    for (const s of statuses) {
+      const pts = s.live;
+      if (!pts || pts.length === 0) continue;
+      const last = pts[pts.length - 1];
+      const prev = live[s.hostId];
+      if (prev && prev.at >= last.t) continue;
+      live[s.hostId] = { points: pts.slice(-LIVE_CAP), latest: prev?.latest, at: last.t };
+      changed = true;
+    }
+    return changed ? { live } : {};
+  });
 }
 
 // ------------------------------------------------------------------ events
 
 function onEvent(type: string, data: unknown) {
   switch (type) {
+    case "metric":
+      pushMetric(data as Metric);
+      break;
     case "status": {
       const s = data as Status;
       set((st) => ({ statuses: { ...st.statuses, [s.hostId]: s } }));
+      seedLive([s]);
       break;
     }
     case "status_removed": {
@@ -323,7 +409,10 @@ function onEvent(type: string, data: unknown) {
       set((st) => {
         const next = { ...st.statuses };
         delete next[hostId];
-        return { statuses: next };
+        if (!(hostId in st.live)) return { statuses: next };
+        const live = { ...st.live };
+        delete live[hostId];
+        return { statuses: next, live };
       });
       break;
     }

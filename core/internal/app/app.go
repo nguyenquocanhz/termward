@@ -109,6 +109,9 @@ func Start(parent context.Context, cfg Config) (*Instance, error) {
 			cfg.OnAlert(a)
 		}
 	}
+	// The monitor runs the 30 s health poll and, because the pool can open
+	// multiplexed sessions, also the per-host real-time metrics stream; both
+	// publish through the same hub. Its lifecycle is bound to ctx via mon.Run.
 	mon := health.NewMonitor(st, pool, publish)
 	srv := api.New(ctx, api.Deps{
 		Token: cfg.Token, Store: st, Keys: km, Secrets: sec, Pool: pool, Monitor: mon, Hub: hub, Cloud: pro,

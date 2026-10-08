@@ -53,6 +53,8 @@ const en = {
   "card.openTerminal": "Open terminal",
   "card.checkNow": "Check now",
   "card.checked": "Checked {ago}",
+  "m.live": "Live",
+  "m.liveHint": "Streaming live over SSH, updating every couple of seconds.",
 
   "f.cpu": "CPU at {v}% (limit {t}%)",
   "f.mem": "Memory at {v}% (limit {t}%)",
@@ -741,6 +743,8 @@ const vi: Record<TKey, string> = {
   "card.openTerminal": "Mở terminal",
   "card.checkNow": "Kiểm tra ngay",
   "card.checked": "Kiểm tra {ago}",
+  "m.live": "Trực tiếp",
+  "m.liveHint": "Đang truyền trực tiếp qua SSH, cập nhật vài giây một lần.",
 
   "f.cpu": "CPU {v}% (ngưỡng {t}%)",
   "f.mem": "RAM {v}% (ngưỡng {t}%)",

@@ -40,6 +40,10 @@ type Status struct {
 	Error     string    `json:"error,omitempty"`
 	ErrorKind string    `json:"errorKind,omitempty"`
 	History   []Point   `json:"history"`
+	// Live is a high-resolution ring (last liveRingSize points) fed by the
+	// per-host live-metrics stream, so a freshly opened UI can backfill its
+	// sparkline immediately. Empty for Windows hosts and hosts without a stream.
+	Live []LivePoint `json:"live"`
 	// MutedUntil is set after a planned reboot/shutdown: alerts are held back.
 	MutedUntil *time.Time `json:"mutedUntil,omitempty"`
 }
@@ -101,6 +105,10 @@ type Monitor struct {
 	runner  Runner
 	publish Publisher
 
+	// stream runs the per-host live-metrics loops. It is nil when the runner
+	// cannot open SSH sessions (e.g. the fake runner used in unit tests).
+	stream *metricStreamer
+
 	mu     sync.Mutex
 	states map[string]*hostState
 	alerts []Alert
@@ -114,15 +122,62 @@ type hostState struct {
 }
 
 func NewMonitor(st *store.Store, r Runner, pub Publisher) *Monitor {
-	return &Monitor{
+	m := &Monitor{
 		store: st, runner: r, publish: pub,
 		states: map[string]*hostState{},
 		wake:   make(chan struct{}, 1),
 	}
+	// Live metrics need a streaming SSH session; the real pool provides one.
+	if ss, ok := r.(Streamer); ok {
+		m.stream = newMetricStreamer(ss, m.liveInterval, m.onLiveMetric)
+	}
+	return m
+}
+
+// liveInterval is the configured live-metrics tick, clamped to at least 1 s.
+func (m *Monitor) liveInterval() time.Duration {
+	sec := m.store.Settings().MetricsIntervalSec
+	if sec < 1 {
+		sec = 2
+	}
+	return time.Duration(sec) * time.Second
+}
+
+// onLiveMetric records one live sample: it appends to the host's sparkline ring
+// (only when CPU is defined), refreshes the fast display fields on the last
+// Sample, and republishes the metric on the events hub. It never touches the
+// host level or findings — alerting stays entirely with the 30 s poll.
+func (m *Monitor) onLiveMetric(metric Metric) {
+	m.mu.Lock()
+	if st, ok := m.states[metric.HostID]; ok {
+		if metric.CPU != nil {
+			st.status.Live = append(st.status.Live, LivePoint{
+				T: metric.At, CPU: *metric.CPU, Mem: metric.Mem, Load: metric.Load1,
+			})
+			if n := len(st.status.Live); n > liveRingSize {
+				st.status.Live = slices.Clone(st.status.Live[n-liveRingSize:])
+			}
+		}
+		if s := st.status.Sample; s != nil {
+			if metric.CPU != nil {
+				s.CPUPercent = *metric.CPU
+			}
+			s.MemPercent = metric.Mem
+			s.MemUsedKB, s.MemTotalKB = uint64(metric.MemUsedKB), uint64(metric.MemTotalKB)
+			s.Load = [3]float64{metric.Load1, metric.Load5, metric.Load15}
+			s.SwapUsedKB, s.SwapTotalKB = uint64(metric.SwapUsedKB), uint64(metric.SwapTotalKB)
+		}
+	}
+	m.mu.Unlock()
+	m.publish("metric", metric)
 }
 
 // Run polls every monitored host, then sleeps for the configured interval.
 func (m *Monitor) Run(ctx context.Context) {
+	if m.stream != nil {
+		m.stream.start(ctx)
+		defer m.stream.stopAll()
+	}
 	for {
 		m.pollAll(ctx)
 		interval := time.Duration(m.store.Settings().PollIntervalSec) * time.Second
@@ -201,6 +256,9 @@ func (m *Monitor) prune(hosts []store.Host) {
 	}
 	m.mu.Unlock()
 	for _, id := range removed {
+		if m.stream != nil {
+			m.stream.stop(id) // unmonitored or deleted: no live loop
+		}
 		m.publish("status_removed", map[string]string{"hostId": id})
 	}
 }
@@ -208,7 +266,7 @@ func (m *Monitor) prune(hosts []store.Host) {
 func (m *Monitor) stateLocked(hostID string) *hostState {
 	st, ok := m.states[hostID]
 	if !ok {
-		st = &hostState{status: Status{HostID: hostID, Level: LevelUnknown, Findings: []Finding{}, History: []Point{}}}
+		st = &hostState{status: Status{HostID: hostID, Level: LevelUnknown, Findings: []Finding{}, History: []Point{}, Live: []LivePoint{}}}
 		m.states[hostID] = st
 	}
 	return st
@@ -343,10 +401,32 @@ func (m *Monitor) apply(hostID string, res sshx.Result, err error, took time.Dur
 	snap := cloneStatus(st.status)
 	m.mu.Unlock()
 
+	// Live metrics stream only for a connected, monitored Linux host; the
+	// Windows case stays on the 30 s poll alone. A transient poll error
+	// (sample == nil) must NOT tear the stream down — that would freeze the
+	// sparkline for ~30 s after a hiccup; the stream's own Connected() guard
+	// ends it if the link genuinely died.
+	if m.stream != nil {
+		switch {
+		case sampleIsLinux(sample):
+			m.stream.ensure(hostID)
+		case sample != nil: // data arrived but not Linux (Windows): never stream
+			m.stream.stop(hostID)
+		}
+	}
+
 	m.publish("status", snap)
 	if alert != nil {
 		m.publish("alert", *alert)
 	}
+}
+
+// sampleIsLinux reports whether a poll result came from a Linux host. The
+// collector reads /proc (MemTotal, uname -r), which a Windows host — whose
+// shell cannot run the POSIX collector — never reports, so these fields are the
+// reliable Linux signal.
+func sampleIsLinux(s *Sample) bool {
+	return s != nil && s.MemTotalKB > 0 && s.Kernel != ""
 }
 
 // Raise records an alert that did not come from a health check (a hardware
@@ -405,11 +485,19 @@ func cloneStatus(s Status) Status {
 	}
 	s.Findings = slices.Clone(s.Findings)
 	s.History = slices.Clone(s.History)
+	s.Live = slices.Clone(s.Live)
 	if s.Findings == nil {
 		s.Findings = []Finding{}
 	}
 	if s.History == nil {
 		s.History = []Point{}
+	}
+	if s.Live == nil {
+		s.Live = []LivePoint{}
+	}
+	if s.Sample != nil {
+		sample := *s.Sample
+		s.Sample = &sample
 	}
 	return s
 }
