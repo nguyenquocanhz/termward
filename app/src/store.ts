@@ -25,6 +25,7 @@ import { currentLang, t } from "./lib/i18n";
 import { findingText } from "./lib/findings";
 import { headline, lt } from "./lib/hardware";
 import { installBridge } from "./lib/platform";
+import { hostTarget } from "./lib/target";
 
 export type View =
   | { name: "overview" }
@@ -38,7 +39,15 @@ export type View =
 export interface TermTab {
   id: string;
   hostId: string;
+  /** The Termward name of the host, numbered when it has several tabs. */
   title: string;
+  /**
+   * `user@address` of the session, taken when it was opened (and again on
+   * reconnect): editing the host later must not relabel a running session.
+   */
+  target: string;
+  /** Name of the jump host the session goes through, if any. */
+  via?: string;
   /** Bumped to force a fresh session (reconnect). */
   nonce: number;
 }
@@ -60,6 +69,7 @@ export type Dialog =
   | { kind: "importConfig" }
   | { kind: "power"; hostId: string; action: "reboot" | "poweroff" }
   | { kind: "hardwareSudo"; hostId: string; reason: "required" | "wrong" }
+  | { kind: "paste"; text: string; target: string; onPaste: () => void; onClose: () => void }
   | {
       kind: "confirm";
       title: string;
@@ -131,6 +141,8 @@ interface AppState {
   hwRunDismissed: string | null;
   theme: ThemePref;
   lang: LangPref;
+  /** Ask before pasting more than one line into a terminal. */
+  confirmPaste: boolean;
   dialog: Dialog | null;
   prompt: Prompt | null;
   toasts: Toast[];
@@ -141,15 +153,16 @@ interface AppState {
 
 const PREFS_KEY = "termward.prefs";
 
-function loadPrefs(): { theme: ThemePref; lang: LangPref } {
+function loadPrefs(): { theme: ThemePref; lang: LangPref; confirmPaste: boolean } {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
     return {
       theme: ["system", "light", "dark"].includes(p.theme) ? p.theme : "system",
       lang: ["auto", "en", "vi"].includes(p.lang) ? p.lang : "auto",
+      confirmPaste: p.confirmPaste !== false,
     };
   } catch {
-    return { theme: "system", lang: "auto" };
+    return { theme: "system", lang: "auto", confirmPaste: true };
   }
 }
 
@@ -471,7 +484,10 @@ export function goBack(): boolean {
     else s.prompt.resolve(null);
     return true;
   }
-  if (s.dialog) return (closeDialog(), true);
+  if (s.dialog) {
+    if (s.dialog.kind === "paste") s.dialog.onClose();
+    return (closeDialog(), true);
+  }
   if (s.palette) return (set({ palette: false }), true);
   if (s.drawer) return (set({ drawer: false }), true);
   if (s.view.name === "hardware") return (navigate({ name: "host", hostId: s.view.hostId }), true);
@@ -500,12 +516,12 @@ export function confirmAction(opts: Omit<Extract<Dialog, { kind: "confirm" }>, "
   openDialog({ kind: "confirm", ...opts });
 }
 
-export function setPrefs(p: Partial<{ theme: ThemePref; lang: LangPref }>) {
+export function setPrefs(p: Partial<{ theme: ThemePref; lang: LangPref; confirmPaste: boolean }>) {
   set(p);
-  const { theme, lang } = get();
+  const { theme, lang, confirmPaste } = get();
   if (p.lang) window.termward?.setLanguage?.(currentLang());
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ theme, lang }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ theme, lang, confirmPaste }));
   } catch {
     /* private mode: keep in memory */
   }
@@ -596,12 +612,26 @@ export async function ensureConnected(
 
 // ------------------------------------------------------------------ terminals
 
+/** What a tab shows about its session: where it goes and through what. */
+function sessionOf(h: Host): Pick<TermTab, "target" | "via"> {
+  const jump = h.jumpHostId ? hostById(h.jumpHostId) : undefined;
+  return { target: hostTarget(h), via: jump?.name };
+}
+
 export async function openTerminal(hostId: string) {
-  const h = hostById(hostId);
-  if (!h) return;
+  if (!hostById(hostId)) return;
   if (!(await ensureConnected(hostId))) return;
-  const sameHost = get().tabs.filter((x) => x.hostId === hostId).length;
-  const tab: TermTab = { id: uid(), hostId, title: sameHost ? `${h.name} (${sameHost + 1})` : h.name, nonce: 0 };
+  const h = hostById(hostId); // may have been edited while a prompt was open
+  if (!h) return;
+  // "(2)", "(3)"… the lowest number no open tab of this host is using.
+  const taken = new Set(
+    get()
+      .tabs.filter((x) => x.hostId === hostId)
+      .map((x) => x.title),
+  );
+  let title = h.name;
+  for (let n = 2; taken.has(title); n++) title = `${h.name} (${n})`;
+  const tab: TermTab = { id: uid(), hostId, title, ...sessionOf(h), nonce: 0 };
   set((s) => ({ tabs: [...s.tabs, tab], activeTab: tab.id, view: { name: "terminals" }, palette: false }));
 }
 
@@ -614,10 +644,35 @@ export function closeTab(id: string) {
   });
 }
 
+export function closeOtherTabs(id: string) {
+  set((s) => ({ tabs: s.tabs.filter((x) => x.id === id), activeTab: id }));
+}
+
 export async function reconnectTab(id: string) {
   const tab = get().tabs.find((x) => x.id === id);
   if (!tab || !(await ensureConnected(tab.hostId))) return;
-  set((s) => ({ tabs: s.tabs.map((x) => (x.id === id ? { ...x, nonce: x.nonce + 1 } : x)) }));
+  const h = hostById(tab.hostId);
+  set((s) => ({
+    tabs: s.tabs.map((x) => (x.id === id ? { ...x, ...(h ? sessionOf(h) : {}), nonce: x.nonce + 1 } : x)),
+  }));
+}
+
+// ------------------------------------------------------------------ hosts
+
+/** Deleting a server always goes through this confirmation. */
+export function confirmDeleteHost(host: Host) {
+  confirmAction({
+    title: t("host.confirmDelete", { name: host.name }),
+    body: t("host.confirmDeleteBody"),
+    confirm: t("common.delete"),
+    danger: true,
+    run: async () => {
+      await api.deleteHost(host.id);
+      await refreshHosts();
+      const v = get().view;
+      if ((v.name === "host" || v.name === "hardware") && v.hostId === host.id) navigate({ name: "overview" });
+    },
+  });
 }
 
 // ------------------------------------------------------------------ exec

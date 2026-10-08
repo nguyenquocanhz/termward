@@ -32,6 +32,8 @@ const (
 // TERMWARD_CLOUD_URL when it is set and acceptable (https anywhere; plain
 // http only to this machine, for a local `wrangler dev`). The URL must be an
 // origin without a path, since the server signs the path it sees.
+// The value is not repeated in errors (they are logged): it may carry
+// credentials or a token.
 func ResolveBaseURL(env string) (string, error) {
 	env = strings.TrimSpace(env)
 	if env == "" {
@@ -40,7 +42,7 @@ func ResolveBaseURL(env string) (string, error) {
 	u, err := url.Parse(env)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
 		(u.Path != "" && u.Path != "/") {
-		return DefaultBaseURL, fmt.Errorf("TERMWARD_CLOUD_URL %q is not an http(s) origin; using %s", env, DefaultBaseURL)
+		return DefaultBaseURL, errNotOrigin
 	}
 	switch u.Scheme {
 	case "https":
@@ -49,10 +51,12 @@ func ResolveBaseURL(env string) (string, error) {
 			return DefaultBaseURL, fmt.Errorf("TERMWARD_CLOUD_URL may use http only for 127.0.0.1 or localhost; using %s", DefaultBaseURL)
 		}
 	default:
-		return DefaultBaseURL, fmt.Errorf("TERMWARD_CLOUD_URL %q is not an http(s) origin; using %s", env, DefaultBaseURL)
+		return DefaultBaseURL, errNotOrigin
 	}
 	return u.Scheme + "://" + u.Host, nil
 }
+
+var errNotOrigin = fmt.Errorf("TERMWARD_CLOUD_URL is not an http(s) origin (no user, path, query or fragment); using %s", DefaultBaseURL)
 
 // newHTTPClient verifies TLS certificates (it never sets InsecureSkipVerify)
 // and does not follow redirects: a signed request is only valid for the path

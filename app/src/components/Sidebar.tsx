@@ -22,6 +22,7 @@ import { useT } from "../lib/i18n";
 import { severity } from "../lib/findings";
 import { StatusDot, modKey } from "./ui";
 import { HwBadge } from "./HwBadge";
+import { openHostMenu } from "./hostMenu";
 import type { Host } from "../lib/api";
 
 export function Sidebar({ dark }: { dark: boolean }) {
@@ -145,6 +146,7 @@ export function Sidebar({ dark }: { dark: boolean }) {
                     className={`host-row${selectedHost === h.id ? " active" : ""}`}
                     onClick={() => navigate({ name: "host", hostId: h.id })}
                     onDoubleClick={() => void openTerminal(h.id)}
+                    onContextMenu={(e) => openHostMenu(e, h)}
                     title={`${h.user}@${h.address}`}
                   >
                     <StatusDot level={h.monitor ? (st?.level ?? "unknown") : "off"} checking={st?.checking} />

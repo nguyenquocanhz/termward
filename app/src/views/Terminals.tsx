@@ -1,15 +1,38 @@
 import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
-import { LoaderCircle, Plus, RotateCw, SquareTerminal, X } from "lucide-react";
+import {
+  ClipboardPaste,
+  Copy,
+  CopyPlus,
+  Eraser,
+  LoaderCircle,
+  Plus,
+  RotateCw,
+  SquareTerminal,
+  TextSelect,
+  X,
+} from "lucide-react";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { wsUrl } from "../lib/api";
-import { useT } from "../lib/i18n";
-import { closeTab, reconnectTab, useApp, type TermTab } from "../store";
-import { Kbd, StatusDot, modKey } from "../components/ui";
+import { t as tr, useT } from "../lib/i18n";
+import { readClipboard, writeClipboard } from "../lib/clipboard";
+import {
+  closeOtherTabs,
+  closeTab,
+  errorText,
+  openDialog,
+  openTerminal,
+  reconnectTab,
+  toast,
+  useApp,
+  type TermTab,
+} from "../store";
+import { openContextMenu, type ContextItem } from "../components/ContextMenu";
+import { Kbd, StatusDot, isMac, modKey } from "../components/ui";
 
 // Warm palette tuned to the app, readable in both themes.
 const theme: ITheme = {
@@ -39,6 +62,9 @@ const theme: ITheme = {
 // Phone keyboards lack Esc/Tab/Ctrl/arrows: the key bar sends them to the
 // active tab, and Ctrl/Alt latch onto the next key typed.
 const senders = new Map<string, (data: string) => void>();
+/** Puts the keyboard back into a tab's terminal (after a menu, a tab click). */
+const focusers = new Map<string, () => void>();
+const focusActive = () => requestAnimationFrame(() => focusers.get(useApp.getState().activeTab ?? "")?.());
 const useLatch = create<{ ctrl: boolean; alt: boolean }>(() => ({ ctrl: false, alt: false }));
 
 function applyLatch(d: string): string {
@@ -96,6 +122,25 @@ function KeyBar({ tabId }: { tabId: string | null }) {
   );
 }
 
+function tabMenu(tab: TermTab, count: number): ContextItem[] {
+  return [
+    { label: tr("term.closeTab"), icon: <X size={14} />, run: () => closeTab(tab.id) },
+    { label: tr("term.closeOthers"), disabled: count < 2, run: () => closeOtherTabs(tab.id) },
+    { separator: true },
+    { label: tr("term.duplicate"), icon: <CopyPlus size={14} />, run: () => void openTerminal(tab.hostId) },
+    { label: tr("term.reconnect"), icon: <RotateCw size={14} />, run: () => void reconnectTab(tab.id) },
+  ];
+}
+
+async function copyToClipboard(text: string, okMessage?: string) {
+  try {
+    await writeClipboard(text);
+    if (okMessage) toast("success", okMessage);
+  } catch (e) {
+    toast("error", tr("term.copyFailed"), errorText(e));
+  }
+}
+
 /** Always mounted (hidden when another view is active) so sessions survive navigation. */
 export function Terminals({ visible }: { visible: boolean }) {
   const t = useT();
@@ -126,19 +171,34 @@ export function Terminals({ visible }: { visible: boolean }) {
         </div>
       ) : (
         <>
-          <div className="tabbar">
+          <div className="tabbar" role="tablist">
             {tabs.map((tab) => (
               <div
                 key={tab.id}
+                role="tab"
+                aria-selected={tab.id === activeTab}
                 className={`tab${tab.id === activeTab ? " active" : ""}`}
-                onClick={() => useApp.setState({ activeTab: tab.id })}
+                onClick={() => {
+                  useApp.setState({ activeTab: tab.id });
+                  focusActive();
+                }}
                 onAuxClick={(e) => e.button === 1 && closeTab(tab.id)}
-                title={tab.title}
+                onContextMenu={(e) =>
+                  openContextMenu(e, tabMenu(tab, tabs.length), { label: tab.target, restoreFocus: focusActive })
+                }
+                title={[tab.target, tab.title, tab.via ? t("term.via", { host: tab.via }) : ""]
+                  .filter(Boolean)
+                  .join("\n")}
               >
                 <StatusDot level={statuses[tab.hostId]?.level ?? "unknown"} />
-                <span className="truncate">{tab.title}</span>
+                <span className="tab-text">
+                  <span className="tab-target truncate">{tab.target}</span>
+                  <span className="tab-name truncate">{tab.title}</span>
+                </span>
                 <span
                   className="x"
+                  role="button"
+                  aria-label={t("term.closeTab")}
                   onClick={(e) => {
                     e.stopPropagation();
                     closeTab(tab.id);
@@ -171,6 +231,8 @@ export function Terminals({ visible }: { visible: boolean }) {
 
 type PaneState = { kind: "connecting" } | { kind: "open" } | { kind: "closed"; code?: number; message?: string };
 
+const LONG_PRESS_MS = 550;
+
 function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
@@ -179,6 +241,7 @@ function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
   const [state, setState] = useState<PaneState>({ kind: "connecting" });
 
   useEffect(() => {
+    const el = host.current!;
     const term = new Terminal({
       theme,
       fontFamily: '"JetBrains Mono Variable", "Cascadia Mono", Menlo, Consolas, monospace',
@@ -193,7 +256,7 @@ function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon((_e, uri) => window.termward?.openExternal(uri) ?? window.open(uri, "_blank")));
-    term.open(host.current!);
+    term.open(el);
     termRef.current = term;
     fitRef.current = fit;
     try {
@@ -201,25 +264,180 @@ function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
     } catch {
       /* not laid out yet */
     }
+    let disposed = false;
+    const focus = () => {
+      if (!disposed) term.focus();
+    };
 
-    // Ctrl+Shift+C / Ctrl+Shift+V copy & paste; plain Ctrl+C stays SIGINT.
+    // ---- copy & paste. Nothing here types into the shell except what the
+    // user pastes, and that always goes through term.paste() so programs that
+    // asked for bracketed paste get it.
+    const copySelection = () => {
+      const sel = term.getSelection();
+      if (!sel) return;
+      void copyToClipboard(sel);
+      term.clearSelection();
+    };
+    const pasteText = (raw: string) => {
+      if (disposed || !raw) return;
+      const text = raw.replace(/\r\n?/g, "\n");
+      const body = text.replace(/\n+$/, "");
+      if (body === "" || !body.includes("\n")) {
+        // One line: leave the Enter to the user, even when a line break was
+        // copied along with it.
+        term.paste(body === "" ? text : body);
+        focus();
+        return;
+      }
+      if (!useApp.getState().confirmPaste) {
+        term.paste(text);
+        focus();
+        return;
+      }
+      openDialog({
+        kind: "paste",
+        text,
+        target: tab.target,
+        onPaste: () => {
+          if (!disposed) term.paste(text);
+        },
+        onClose: () => requestAnimationFrame(focus),
+      });
+    };
+    const pasteClipboard = async () => {
+      try {
+        pasteText(await readClipboard());
+      } catch {
+        toast("error", tr("term.pasteDenied"), tr("term.pasteDeniedBody"));
+      }
+    };
+
+    // Windows/Linux: Ctrl+C copies a selection and is SIGINT without one,
+    // Ctrl+V pastes. macOS: Cmd+C / Cmd+V, and Ctrl+C is always SIGINT.
+    // Everywhere: Ctrl+Shift+C / Ctrl+Shift+V, Ctrl+Insert / Shift+Insert.
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.shiftKey && e.code === "KeyC") {
-        const sel = term.getSelection();
-        if (sel) void (window.termward?.copy(sel) ?? navigator.clipboard.writeText(sel));
+      const isC = e.code === "KeyC";
+      const isV = e.code === "KeyV";
+      let action: "copy" | "paste" | null = null;
+      let interrupt = false; // the key is SIGINT when there is nothing to copy
+      if (e.code === "Insert" && !e.altKey && !e.metaKey) {
+        if (e.ctrlKey && !e.shiftKey) action = "copy";
+        else if (e.shiftKey && !e.ctrlKey) action = "paste";
+      } else if ((isC || isV) && !e.altKey) {
+        if (e.ctrlKey && e.shiftKey && !e.metaKey) action = isC ? "copy" : "paste";
+        else if (isMac && e.metaKey && !e.ctrlKey && !e.shiftKey) {
+          // Cmd+C / Cmd+V are also the Edit menu's shortcuts: leave them to
+          // the browser, whose copy event xterm answers with the selection
+          // and whose paste event onNativePaste below takes. Handling them
+          // here as well could copy or paste twice.
+          return false;
+        } else if (!isMac && e.ctrlKey && !e.shiftKey && !e.metaKey) {
+          action = isC ? "copy" : "paste";
+          interrupt = isC;
+        }
+      }
+      if (!action) return true;
+      if (action === "copy") {
+        if (interrupt && !term.hasSelection()) return true;
+        e.preventDefault();
+        copySelection();
         return false;
       }
-      if (mod && e.shiftKey && e.code === "KeyV") {
-        void navigator.clipboard
-          .readText()
-          .then((txt) => term.paste(txt))
-          .catch(() => {});
-        return false;
-      }
-      return true;
+      // preventDefault keeps the browser from also firing its own paste.
+      e.preventDefault();
+      void pasteClipboard();
+      return false;
     });
+
+    // Pastes that do not come from our shortcuts (the macOS Edit menu, the
+    // paste bubble of a phone) take the same path, confirmation included.
+    const onNativePaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      pasteText(e.clipboardData?.getData("text/plain") ?? "");
+    };
+    el.addEventListener("paste", onNativePaste, true);
+
+    // ---- right-click / long-press menu
+    const openMenu = (x: number, y: number) => {
+      const items: ContextItem[] = [
+        {
+          label: tr("common.copy"),
+          icon: <Copy size={14} />,
+          hint: isMac ? "⌘C" : "Ctrl+C",
+          disabled: !term.hasSelection(),
+          run: copySelection,
+        },
+        {
+          label: tr("term.paste"),
+          icon: <ClipboardPaste size={14} />,
+          hint: isMac ? "⌘V" : "Ctrl+V",
+          run: () => void pasteClipboard(),
+        },
+        { label: tr("term.selectAll"), icon: <TextSelect size={14} />, run: () => term.selectAll() },
+        // xterm drops its own scrollback: no command is sent to the server.
+        { label: tr("term.clear"), icon: <Eraser size={14} />, run: () => term.clear() },
+        { separator: true },
+        {
+          label: tr("term.copyTarget", { target: tab.target }),
+          run: () => void copyToClipboard(tab.target, tr("common.copied")),
+        },
+        { separator: true },
+        { label: tr("term.reconnect"), icon: <RotateCw size={14} />, run: () => void reconnectTab(tab.id) },
+        { label: tr("term.closeTab"), icon: <X size={14} />, run: () => closeTab(tab.id) },
+      ];
+      openContextMenu({ clientX: x, clientY: y }, items, { label: tab.target, restoreFocus: focus });
+    };
+
+    let pressTimer: number | undefined;
+    let pressed = false; // a long press opened the menu: swallow the tap that ends it
+    let startX = 0;
+    let startY = 0;
+    const cancelPress = () => {
+      window.clearTimeout(pressTimer);
+      pressTimer = undefined;
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      const touch = (e as PointerEvent).pointerType === "touch";
+      e.preventDefault();
+      // vim, tmux, htop and mc ask for the mouse: the right button is theirs
+      // (xterm has already sent it). Shift+right-click still opens our menu.
+      if (term.modes.mouseTrackingMode !== "none" && !e.shiftKey && !touch) return;
+      if (touch) {
+        cancelPress();
+        pressed = true;
+      }
+      openMenu(e.clientX, e.clientY);
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      cancelPress();
+      pressed = false;
+      if (e.touches.length !== 1) return;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      // iOS never sends "contextmenu" for a long press, so time it ourselves.
+      pressTimer = window.setTimeout(() => {
+        pressed = true;
+        openMenu(startX, startY);
+      }, LONG_PRESS_MS);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const p = e.touches[0];
+      if (!p || Math.abs(p.clientX - startX) > 10 || Math.abs(p.clientY - startY) > 10) cancelPress();
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      cancelPress();
+      if (pressed) {
+        pressed = false;
+        if (e.cancelable) e.preventDefault(); // no click on the menu item under the finger
+      }
+    };
+    el.addEventListener("contextmenu", onContextMenu);
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", cancelPress);
 
     const ws = new WebSocket(wsUrl("/ws/terminal", { hostId: tab.hostId, cols: term.cols, rows: term.rows }));
     ws.binaryType = "arraybuffer";
@@ -251,6 +469,7 @@ function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
       send(d);
       term.focus();
     });
+    focusers.set(tab.id, focus);
     const data = term.onData((d) => send(applyLatch(d)));
     const bin = term.onBinary((d) => {
       if (ws.readyState !== WebSocket.OPEN) return;
@@ -263,7 +482,7 @@ function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
     });
 
     const ro = new ResizeObserver(() => {
-      if (host.current && host.current.offsetWidth > 0) {
+      if (el.offsetWidth > 0) {
         try {
           fit.fit();
         } catch {
@@ -271,11 +490,20 @@ function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
         }
       }
     });
-    ro.observe(host.current!);
+    ro.observe(el);
 
     return () => {
+      disposed = true;
       closedByUs = true;
+      cancelPress();
+      el.removeEventListener("paste", onNativePaste, true);
+      el.removeEventListener("contextmenu", onContextMenu);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", cancelPress);
       senders.delete(tab.id);
+      if (focusers.get(tab.id) === focus) focusers.delete(tab.id);
       ro.disconnect();
       data.dispose();
       bin.dispose();
@@ -297,37 +525,75 @@ function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
     });
   }, [active]);
 
+  const stateText =
+    state.kind === "open"
+      ? t("term.connected")
+      : state.kind === "connecting"
+        ? t("term.stateConnecting")
+        : t("term.disconnected");
+
   return (
     <div className={`term-pane${active ? "" : " hidden"}`}>
-      <div ref={host} style={{ height: "100%" }} />
-      {state.kind !== "open" && (
-        <div className="term-status">
-          <div className="box">
-            {state.kind === "connecting" ? (
-              <>
-                <LoaderCircle size={18} className="spin" />
-                {t("term.connecting", { host: tab.title })}
-              </>
-            ) : (
-              <>
-                <span>
-                  {state.message ??
-                    (state.code !== undefined ? t("term.closed", { code: state.code }) : t("term.lost"))}
-                </span>
-                <div className="row">
-                  <button className="btn sm" onClick={() => closeTab(tab.id)}>
-                    {t("common.close")}
-                  </button>
-                  <button className="btn sm primary" onClick={() => void reconnectTab(tab.id)}>
-                    <RotateCw size={13} />
-                    {t("term.reconnect")}
-                  </button>
-                </div>
-              </>
-            )}
+      {/* Who and where this session is. The shell prompt belongs to the
+          server (it may well read user@user), so this is said here instead. */}
+      <div className={`term-bar ${state.kind}`}>
+        <StatusDot
+          level={state.kind === "open" ? "ok" : state.kind === "connecting" ? "unknown" : "down"}
+          checking={state.kind === "connecting"}
+        />
+        <span className="term-target selectable" title={tab.target}>
+          {tab.target}
+        </span>
+        <button
+          className="icon-btn"
+          title={t("term.copyTarget", { target: tab.target })}
+          aria-label={t("term.copyTarget", { target: tab.target })}
+          onClick={() => {
+            void copyToClipboard(tab.target, t("common.copied"));
+            termRef.current?.focus();
+          }}
+        >
+          <Copy size={13} />
+        </button>
+        <span className="term-name truncate">
+          {tab.title}
+          {tab.via && <span className="term-via"> · {t("term.via", { host: tab.via })}</span>}
+        </span>
+        <span className="term-state" role="status">
+          {stateText}
+        </span>
+      </div>
+      <div className="term-body">
+        <div ref={host} style={{ height: "100%" }} />
+        {state.kind !== "open" && (
+          <div className="term-status">
+            <div className="box">
+              {state.kind === "connecting" ? (
+                <>
+                  <LoaderCircle size={18} className="spin" />
+                  {t("term.connecting", { host: tab.target })}
+                </>
+              ) : (
+                <>
+                  <span>
+                    {state.message ??
+                      (state.code !== undefined ? t("term.closed", { code: state.code }) : t("term.lost"))}
+                  </span>
+                  <div className="row">
+                    <button className="btn sm" onClick={() => closeTab(tab.id)}>
+                      {t("common.close")}
+                    </button>
+                    <button className="btn sm primary" onClick={() => void reconnectTab(tab.id)}>
+                      <RotateCw size={13} />
+                      {t("term.reconnect")}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

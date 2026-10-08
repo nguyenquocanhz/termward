@@ -7,7 +7,11 @@ interface TermwardBridge {
   notify(n: { title: string; body: string; hostId?: string }): void;
   onNotificationClick(cb: (hostId: string) => void): () => void;
   pickKeyFile(): Promise<string | null>;
+  /** Desktop: pick an SSH config or known_hosts file to import from. */
+  pickSshFile?(kind: "config" | "known_hosts"): Promise<string | null>;
   copy(text: string): Promise<void>;
+  /** Desktop: clipboard text. Elsewhere the UI asks navigator.clipboard. */
+  readClipboard?(): Promise<string>;
   openExternal(url: string): void;
   setTheme(mode: "light" | "dark"): void;
   /** Desktop: quit for real (the window's × may only hide to the tray). */

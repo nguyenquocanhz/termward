@@ -8,6 +8,7 @@ import { isMobile, platform } from "./lib/platform";
 import { MobileNav } from "./components/MobileNav";
 import { Sidebar } from "./components/Sidebar";
 import { TitleBar } from "./components/TitleBar";
+import { ContextMenuHost } from "./components/ContextMenu";
 import { DialogHost } from "./components/Dialogs";
 import { Palette } from "./components/Palette";
 import { Toasts } from "./components/Toasts";
@@ -138,6 +139,7 @@ export function App() {
         <DialogHost />
       </ErrorBoundary>
       <Palette dark={dark} />
+      <ContextMenuHost />
       <Toasts />
     </div>
   );

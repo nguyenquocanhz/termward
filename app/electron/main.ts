@@ -174,6 +174,17 @@ function registerIpc(): void {
     return res.canceled ? null : res.filePaths[0];
   });
 
+  // "Choose another file…" in the import dialog. Only the path goes back to
+  // the UI; the core reads the file and returns the servers it lists.
+  ipcMain.handle("dialog:pickSshFile", async (_e, kind: "config" | "known_hosts") => {
+    const res = await dialog.showOpenDialog(win!, {
+      title: kind === "known_hosts" ? "Choose a known_hosts file" : "Choose an SSH config file",
+      defaultPath: path.join(app.getPath("home"), ".ssh"),
+      properties: ["openFile", "showHiddenFiles"],
+    });
+    return res.canceled ? null : res.filePaths[0];
+  });
+
   ipcMain.on("app:quit", quitApp);
   ipcMain.handle("prefs:closeToTray", () => prefs.closeToTray);
   ipcMain.on("prefs:setCloseToTray", (_e, on: boolean) => {
@@ -182,6 +193,8 @@ function registerIpc(): void {
   });
 
   ipcMain.handle("clipboard:write", (_e, text: string) => clipboard.writeText(String(text)));
+  // Text only: pasting into a terminal never needs images, HTML or file lists.
+  ipcMain.handle("clipboard:read", () => clipboard.readText());
   ipcMain.on("open-external", (_e, url: string) => openExternal(String(url)));
 
   ipcMain.on("theme:changed", (_e, mode: "light" | "dark") => {

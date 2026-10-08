@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
+  ClipboardPaste,
   FileInput,
+  FileQuestion,
   FileUp,
   FolderOpen,
   HardDrive,
+  Info,
   KeyRound,
   Lock,
   Power,
@@ -13,8 +16,19 @@ import {
   ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
-import { api, ApiError, type ConfigCandidate, type Key, type KeyCandidate } from "../lib/api";
-import { useT } from "../lib/i18n";
+import {
+  api,
+  ApiError,
+  type ImportResult,
+  type ImportSource,
+  type Key,
+  type KeyCandidate,
+  type KnownCandidate,
+  type KnownHostsImport,
+  type SshConfigImport,
+} from "../lib/api";
+import { useT, type TKey } from "../lib/i18n";
+import { hostTarget } from "../lib/target";
 import { keyTypeLabel } from "../lib/format";
 import {
   closeDialog,
@@ -22,6 +36,7 @@ import {
   errorText,
   refreshHosts,
   refreshKeys,
+  setPrefs,
   startHardwareCheck,
   toast,
   useApp,
@@ -60,6 +75,8 @@ function DialogSwitch({ d }: { d: Dialog }) {
       return <PowerDialog hostId={d.hostId} action={d.action} />;
     case "hardwareSudo":
       return <HardwareSudoDialog hostId={d.hostId} reason={d.reason} />;
+    case "paste":
+      return <PasteDialog d={d} />;
   }
 }
 
@@ -606,41 +623,95 @@ function DeployKey({ keyId, hostId }: { keyId: string; hostId?: string }) {
   );
 }
 
-// ---------------------------------------------------------------- ssh config
+// ---------------------------------------------------------------- import servers
+
+type ImportFrom = "config" | "known";
+
+const knownKey = (c: KnownCandidate) => `${c.address} ${c.port}`;
+
+/** Loads one import source; `data` is null while loading. */
+function useImportSource<T extends ImportSource>(load: (path?: string) => Promise<T>) {
+  const [path, setPath] = useState<string | undefined>();
+  const [data, setData] = useState<T | null>(null);
+  const [failed, setFailed] = useState("");
+  useEffect(() => {
+    let stale = false;
+    setData(null);
+    setFailed("");
+    load(path).then(
+      (d) => !stale && setData(d),
+      (e) => !stale && setFailed(errorText(e)),
+    );
+    return () => {
+      stale = true;
+    };
+  }, [path]);
+  return { path, setPath, data, failed };
+}
 
 function ImportConfig() {
   const t = useT();
-  const [items, setItems] = useState<ConfigCandidate[] | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [from, setFrom] = useState<ImportFrom>("config");
+  const cfg = useImportSource<SshConfigImport>(api.sshConfig);
+  const known = useImportSource<KnownHostsImport>(api.knownHosts);
+  const [pickedCfg, setPickedCfg] = useState<Set<string>>(new Set());
+  const [pickedKnown, setPickedKnown] = useState<Set<string>>(new Set());
+  const [edits, setEdits] = useState<Record<string, { user?: string; group?: string }>>({});
   const [group, setGroup] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // A config lists hosts the user set up on purpose: preselect the new ones.
+  // known_hosts is a history (every server ever visited): nothing preselected.
   useEffect(() => {
-    api.sshConfig().then(
-      (list) => {
-        setItems(list);
-        setPicked(new Set(list.filter((c) => !c.exists).map((c) => c.alias)));
-      },
-      (e) => {
-        toast("error", errorText(e));
-        setItems([]);
-      },
+    setPickedCfg(new Set((cfg.data?.entries ?? []).filter((c) => !c.exists).map((c) => c.alias)));
+  }, [cfg.data]);
+  useEffect(() => {
+    setPickedKnown(new Set());
+    setEdits({});
+  }, [known.data]);
+
+  const src = from === "config" ? cfg : known;
+  const knownRows = known.data?.entries ?? [];
+  const userOf = (c: KnownCandidate) => edits[knownKey(c)]?.user ?? known.data?.defaultUser ?? "";
+  const chosenKnown = knownRows.filter((c) => !c.exists && pickedKnown.has(knownKey(c)));
+  const noUser = from === "known" && chosenKnown.some((c) => !userOf(c).trim());
+  const count = from === "config" ? pickedCfg.size : chosenKnown.length;
+  const newKnown = known.data && known.data.exists && !known.data.error ? knownRows.filter((c) => !c.exists).length : 0;
+
+  const finish = (res: ImportResult, note?: string) => {
+    const problems = [
+      ...res.skipped.map((n) => `${n}: ${t("cfg.exists")}`),
+      ...Object.entries(res.failed).map(([n, m]) => `${n}: ${m}`),
+    ];
+    closeDialog();
+    toast(
+      res.imported.length ? "success" : "info",
+      t("cfg.done", { n: res.imported.length }),
+      [res.imported.length ? note : undefined, ...problems].filter(Boolean).join("\n") || undefined,
     );
-  }, []);
+  };
 
   const submit = async () => {
+    if (count === 0 || noUser) return;
     setBusy(true);
     try {
-      const res = await api.importSshConfig([...picked], group);
-      await Promise.all([refreshHosts(), refreshKeys()]);
-      closeDialog();
-      toast(
-        "success",
-        t("cfg.done", { n: res.imported.length }),
-        Object.entries(res.failed)
-          .map(([a, m]) => `${a}: ${m}`)
-          .join("\n") || undefined,
-      );
+      if (from === "config") {
+        const res = await api.importSshConfig([...pickedCfg], group, cfg.path);
+        await Promise.all([refreshHosts(), refreshKeys()]);
+        finish(res);
+      } else {
+        const res = await api.importKnownHosts(
+          chosenKnown.map((c) => ({
+            name: c.name,
+            address: c.address,
+            port: c.port,
+            user: userOf(c).trim(),
+            group: (edits[knownKey(c)]?.group ?? "").trim() || group.trim(),
+          })),
+        );
+        await refreshHosts();
+        finish(res, t("cfg.knownDoneNote"));
+      }
     } catch (e) {
       toast("error", errorText(e));
     } finally {
@@ -648,12 +719,40 @@ function ImportConfig() {
     }
   };
 
-  const selectable = items?.filter((c) => !c.exists) ?? [];
+  const choose = async () => {
+    const p = await window.termward?.pickSshFile?.(from === "config" ? "config" : "known_hosts");
+    if (p) src.setPath(p);
+  };
+  // Ways forward offered wherever a source has nothing to list.
+  const actions = (
+    <>
+      {window.termward?.pickSshFile && (
+        <button className="btn sm" onClick={() => void choose()}>
+          <FolderOpen size={13} />
+          {t("cfg.choose")}
+        </button>
+      )}
+      {from === "config" && newKnown > 0 && (
+        <button className="btn sm" onClick={() => setFrom("known")}>
+          {t("cfg.tryKnown", { n: newKnown })}
+        </button>
+      )}
+      {src.path && (
+        <button className="btn sm ghost" onClick={() => src.setPath(undefined)}>
+          {t("cfg.useDefault")}
+        </button>
+      )}
+    </>
+  );
+
+  const d = src.data;
+  const selectableCfg = cfg.data?.entries.filter((c) => !c.exists) ?? [];
+  const selectableKnown = knownRows.filter((c) => !c.exists);
 
   return (
     <Modal
       title={t("cfg.title")}
-      subtitle={t("cfg.subtitle")}
+      subtitle={t(from === "config" ? "cfg.subtitle" : "cfg.knownSubtitle")}
       wide
       icon={
         <div className="key-icon">
@@ -663,75 +762,217 @@ function ImportConfig() {
       onClose={closeDialog}
       footer={
         <>
+          {noUser && <span className="import-foot-note">{t("cfg.needUser")}</span>}
           <button className="btn" onClick={closeDialog}>
             {t("common.cancel")}
           </button>
-          <button className="btn primary" disabled={busy || picked.size === 0} onClick={submit}>
-            {t("cfg.import", { n: picked.size })}
+          <button className="btn primary" disabled={busy || count === 0 || noUser} onClick={() => void submit()}>
+            {count === 0 ? t("cfg.importNone") : t("cfg.import", { n: count })}
           </button>
         </>
       }
     >
-      {items === null ? (
-        <div className="muted">…</div>
-      ) : items.length === 0 ? (
-        <div className="callout">{t("cfg.none")}</div>
+      <Segmented<ImportFrom>
+        value={from}
+        onChange={setFrom}
+        options={[
+          { value: "config", label: t("cfg.fromConfig") },
+          { value: "known", label: t("cfg.fromKnown") },
+        ]}
+      />
+
+      {src.failed ? (
+        // Keep the ways out: a failed read must not leave only Cancel.
+        <ImportNote tone="crit" icon={<ShieldAlert size={18} />} title={src.failed} body={t("cfg.errBody")}>
+          {actions}
+        </ImportNote>
+      ) : d === null ? (
+        <div className="muted">{t("cfg.reading")}</div>
+      ) : !d.exists ? (
+        <ImportNote
+          icon={<FileQuestion size={18} />}
+          title={t("cfg.missing", { path: d.path })}
+          body={t(from === "config" ? "cfg.missingConfig" : "cfg.missingKnown")}
+        >
+          {actions}
+        </ImportNote>
+      ) : d.error ? (
+        <ImportNote
+          tone="crit"
+          icon={<ShieldAlert size={18} />}
+          title={
+            d.error === "parse" && d.errorLine && from === "config"
+              ? t("cfg.errParseLine", { path: d.path, line: d.errorLine })
+              : t(importErrorKey(from, d.error), { path: d.path })
+          }
+          body={t("cfg.errBody")}
+        >
+          {actions}
+        </ImportNote>
+      ) : d.entries.length === 0 ? (
+        <ImportNote
+          icon={<Info size={18} />}
+          title={
+            from === "config"
+              ? t("cfg.emptyConfig", { path: d.path })
+              : known.data!.hashed > 0
+                ? t("cfg.allHashed", { path: d.path, n: known.data!.hashed })
+                : t("cfg.emptyKnown", { path: d.path })
+          }
+          body={t(from === "config" ? "cfg.emptyConfigBody" : "cfg.emptyKnownBody")}
+        >
+          {actions}
+        </ImportNote>
       ) : (
         <>
-          <div className="card" style={{ maxHeight: 340, overflowY: "auto" }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width: 30 }}>
-                    <input
-                      type="checkbox"
-                      checked={selectable.length > 0 && selectable.every((c) => picked.has(c.alias))}
-                      onChange={(e) => setPicked(new Set(e.target.checked ? selectable.map((c) => c.alias) : []))}
-                      title={t("cfg.selectAll")}
-                    />
-                  </th>
-                  <th>Host</th>
-                  <th>{t("form.address")}</th>
-                  <th>{t("host.auth")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((c) => (
-                  <tr key={c.alias} style={{ opacity: c.exists ? 0.55 : 1 }}>
-                    <td>
+          <div className="import-source">
+            <span className="mono truncate selectable" title={d.path}>
+              {d.path}
+            </span>
+            {actions}
+          </div>
+          {from === "config" ? (
+            <div className="card" style={{ maxHeight: 340, overflowY: "auto" }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 30 }}>
                       <input
                         type="checkbox"
-                        disabled={c.exists}
-                        checked={picked.has(c.alias)}
+                        checked={selectableCfg.length > 0 && selectableCfg.every((c) => pickedCfg.has(c.alias))}
+                        disabled={selectableCfg.length === 0}
                         onChange={(e) =>
-                          setPicked((p) => {
-                            const n = new Set(p);
-                            if (e.target.checked) n.add(c.alias);
-                            else n.delete(c.alias);
-                            return n;
-                          })
+                          setPickedCfg(new Set(e.target.checked ? selectableCfg.map((c) => c.alias) : []))
                         }
+                        title={t("cfg.selectAll")}
+                        aria-label={t("cfg.selectAll")}
                       />
-                    </td>
-                    <td>
-                      <strong>{c.alias}</strong>
-                      {c.exists && (
-                        <span className="badge" style={{ marginLeft: 6 }}>
-                          {t("cfg.exists")}
-                        </span>
-                      )}
-                    </td>
-                    <td className="mono muted">
-                      {c.user}@{c.hostName}
-                      {c.port !== 22 && `:${c.port}`}
-                      {c.proxyJump && <span className="faint"> via {c.proxyJump}</span>}
-                    </td>
-                    <td className="muted">{c.identityFile ? c.identityFile.split(/[\\/]/).pop() : "ssh-agent"}</td>
+                    </th>
+                    <th>Host</th>
+                    <th>{t("form.address")}</th>
+                    <th>{t("host.auth")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {cfg.data!.entries.map((c) => (
+                    <tr key={c.alias} style={{ opacity: c.exists ? 0.55 : 1 }}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          disabled={c.exists}
+                          checked={pickedCfg.has(c.alias)}
+                          aria-label={c.alias}
+                          onChange={(e) => setPickedCfg((p) => toggled(p, c.alias, e.target.checked))}
+                        />
+                      </td>
+                      <td>
+                        <strong>{c.alias}</strong>
+                        {c.exists && (
+                          <span className="badge" style={{ marginLeft: 6 }}>
+                            {t("cfg.exists")}
+                          </span>
+                        )}
+                      </td>
+                      <td className="mono muted">
+                        {c.user}@{c.hostName}
+                        {c.port !== 22 && `:${c.port}`}
+                        {c.proxyJump && <span className="faint"> via {c.proxyJump}</span>}
+                      </td>
+                      <td className="muted">{c.identityFile ? c.identityFile.split(/[\\/]/).pop() : "ssh-agent"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <>
+              <div className="card" style={{ maxHeight: 300, overflowY: "auto" }}>
+                <table className="table import-known">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 30 }}>
+                        <input
+                          type="checkbox"
+                          checked={
+                            selectableKnown.length > 0 && selectableKnown.every((c) => pickedKnown.has(knownKey(c)))
+                          }
+                          disabled={selectableKnown.length === 0}
+                          onChange={(e) =>
+                            setPickedKnown(new Set(e.target.checked ? selectableKnown.map(knownKey) : []))
+                          }
+                          title={t("cfg.selectAll")}
+                          aria-label={t("cfg.selectAll")}
+                        />
+                      </th>
+                      <th>{t("cfg.server")}</th>
+                      <th style={{ width: 150 }}>{t("form.user")}</th>
+                      <th style={{ width: 150 }}>{t("form.group")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {knownRows.map((c) => {
+                      const k = knownKey(c);
+                      const on = pickedKnown.has(k);
+                      const addr = hostTarget({ user: "", address: c.address, port: c.port }).slice(1);
+                      return (
+                        <tr key={k} style={{ opacity: c.exists ? 0.55 : 1 }}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              disabled={c.exists}
+                              checked={on}
+                              aria-label={c.name}
+                              onChange={(e) => setPickedKnown((p) => toggled(p, k, e.target.checked))}
+                            />
+                          </td>
+                          <td>
+                            <strong>{c.name}</strong>
+                            {c.exists && (
+                              <span className="badge" style={{ marginLeft: 6 }}>
+                                {t("cfg.exists")}
+                              </span>
+                            )}
+                            {c.name !== addr && !(c.name === c.address && c.port === 22) && (
+                              <div className="mono muted">{addr}</div>
+                            )}
+                          </td>
+                          <td>
+                            <input
+                              className={`input sm mono${on && !userOf(c).trim() ? " invalid" : ""}`}
+                              value={userOf(c)}
+                              disabled={c.exists}
+                              spellCheck={false}
+                              autoCapitalize="off"
+                              aria-label={`${t("form.user")}: ${c.name}`}
+                              onChange={(e) => setEdits((m) => ({ ...m, [k]: { ...m[k], user: e.target.value } }))}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              className="input sm"
+                              value={edits[k]?.group ?? ""}
+                              disabled={c.exists}
+                              placeholder={group || t("form.groupPh")}
+                              aria-label={`${t("form.group")}: ${c.name}`}
+                              onChange={(e) => setEdits((m) => ({ ...m, [k]: { ...m[k], group: e.target.value } }))}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="callout info import-hint">
+                <Info size={15} />
+                <div>
+                  {t("cfg.knownHint")}
+                  {known.data!.hashed > 0 && <div>{t("cfg.hashed", { n: known.data!.hashed })}</div>}
+                  {known.data!.invalid > 0 && <div>{t("cfg.invalid", { n: known.data!.invalid })}</div>}
+                </div>
+              </div>
+            </>
+          )}
           <Field
             label={
               <>
@@ -748,6 +989,110 @@ function ImportConfig() {
           </Field>
         </>
       )}
+    </Modal>
+  );
+}
+
+function toggled(set: Set<string>, key: string, on: boolean): Set<string> {
+  const next = new Set(set);
+  if (on) next.add(key);
+  else next.delete(key);
+  return next;
+}
+
+function importErrorKey(from: ImportFrom, error: NonNullable<ImportSource["error"]>): TKey {
+  switch (error) {
+    case "parse":
+      return from === "config" ? "cfg.errParse" : "cfg.errParseKnown";
+    case "not_a_file":
+      return "cfg.errNotFile";
+    case "too_large":
+      return "cfg.errTooLarge";
+    default:
+      return "cfg.errUnreadable";
+  }
+}
+
+/** An import source with nothing to list: says why, and what to do next. */
+function ImportNote({
+  icon,
+  title,
+  body,
+  tone,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  body: string;
+  tone?: "crit";
+  children?: ReactNode;
+}) {
+  return (
+    <div className={`import-note${tone ? ` ${tone}` : ""}`}>
+      <div className="import-note-icon">{icon}</div>
+      <div className="import-note-text">
+        <strong className="selectable">{title}</strong>
+        <p>{body}</p>
+        <div className="import-note-actions">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- paste
+
+const PASTE_PREVIEW_LINES = 6;
+
+/** Several lines are about to be typed into a shell: show them first. */
+function PasteDialog({ d }: { d: Extract<Dialog, { kind: "paste" }> }) {
+  const t = useT();
+  const [dontAsk, setDontAsk] = useState(false);
+  const lines = d.text.replace(/\n+$/, "").split("\n");
+  const shown = lines.slice(0, PASTE_PREVIEW_LINES).map((l) => (l.length > 160 ? l.slice(0, 160) + "…" : l));
+  const close = () => {
+    closeDialog();
+    d.onClose();
+  };
+  const paste = () => {
+    if (dontAsk) setPrefs({ confirmPaste: false });
+    closeDialog();
+    d.onPaste();
+    d.onClose();
+  };
+  return (
+    <Modal
+      title={t("paste.title", { n: lines.length })}
+      subtitle={t("paste.body", { target: d.target })}
+      icon={
+        <div className="key-icon">
+          <ClipboardPaste size={17} />
+        </div>
+      }
+      onClose={close}
+      footer={
+        <>
+          <button className="btn" onClick={close}>
+            {t("common.cancel")}
+          </button>
+          <button className="btn primary" autoFocus onClick={paste}>
+            {t("term.paste")}
+          </button>
+        </>
+      }
+    >
+      <pre className="paste-preview">
+        {shown.join("\n")}
+        {lines.length > shown.length && (
+          <span className="faint">{"\n" + t("paste.more", { n: lines.length - shown.length })}</span>
+        )}
+      </pre>
+      <label className="check">
+        <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} />
+        <span>
+          {t("paste.dontAsk")}
+          <small>{t("paste.dontAskHint")}</small>
+        </span>
+      </label>
     </Modal>
   );
 }

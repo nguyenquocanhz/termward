@@ -109,6 +109,10 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/import/ssh-config", s.readSSHConfig)
 	mux.HandleFunc("POST /api/import/ssh-config", s.importSSHConfig)
+	mux.HandleFunc("POST /api/import/ssh-config/read", s.readSSHConfig)
+	mux.HandleFunc("GET /api/import/known-hosts", s.readKnownHosts)
+	mux.HandleFunc("POST /api/import/known-hosts/read", s.readKnownHosts)
+	mux.HandleFunc("POST /api/import/known-hosts", s.importKnownHosts)
 
 	s.cloudRoutes(mux)
 

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -127,7 +126,7 @@ func TestSignInRegistersDeviceAndSignsRequests(t *testing.T) {
 	if err != nil || seed == "" {
 		t.Fatal("device key missing from the secret store")
 	}
-	raw, _ := os.ReadFile(filepath.Join(e.dir, "cloud", "state.json"))
+	raw, _ := os.ReadFile(e.s.statePath())
 	if strings.Contains(string(raw), seed) || !strings.Contains(string(raw), `"deviceId": "dev_1"`) {
 		t.Fatalf("state.json:\n%s", raw)
 	}
@@ -277,7 +276,7 @@ func TestSignOutRevokesAndForgetsKey(t *testing.T) {
 	if st.SignedIn || st.Email != "" || len(st.Devices) != 0 || len(st.Prices) == 0 {
 		t.Errorf("status after sign-out %+v", st)
 	}
-	raw, _ := os.ReadFile(filepath.Join(e.dir, "cloud", "state.json"))
+	raw, _ := os.ReadFile(e.s.statePath())
 	if strings.Contains(string(raw), "dev_1") || strings.Contains(string(raw), "a@b.vn") {
 		t.Errorf("state.json keeps the account:\n%s", raw)
 	}
@@ -363,7 +362,7 @@ func TestChannelsValidateLocallyAndNeverLeak(t *testing.T) {
 		t.Error("test result not refreshed")
 	}
 	b, _ := json.Marshal(e.s.Status())
-	raw, _ := os.ReadFile(filepath.Join(e.dir, "cloud", "state.json"))
+	raw, _ := os.ReadFile(e.s.statePath())
 	for _, secretPart := range []string{tgToken, "AAHfiqks"} {
 		if strings.Contains(string(b), secretPart) || strings.Contains(string(raw), secretPart) {
 			t.Fatalf("channel secret leaked: %s / %s", b, raw)

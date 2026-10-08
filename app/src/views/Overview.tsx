@@ -34,6 +34,7 @@ import {
 } from "../store";
 import { LevelBadge, Meter, StatusDot } from "../components/ui";
 import { HwBadge } from "../components/HwBadge";
+import { openHostMenu } from "../components/hostMenu";
 
 type Filter = "all" | "ok" | "attention" | "down" | "off";
 
@@ -219,7 +220,11 @@ function HostCard({
   const disk = s?.disks.reduce((m, d) => Math.max(m, d.percent), 0) ?? -1;
 
   return (
-    <div className={`host-card ${level}`} onClick={() => navigate({ name: "host", hostId: host.id })}>
+    <div
+      className={`host-card ${level}`}
+      onClick={() => navigate({ name: "host", hostId: host.id })}
+      onContextMenu={(e) => openHostMenu(e, host)}
+    >
       <div className="head">
         <div style={{ paddingTop: 5 }}>
           <StatusDot level={level} checking={status?.checking} />

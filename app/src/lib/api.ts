@@ -197,6 +197,44 @@ export interface ConfigCandidate {
   exists: boolean;
 }
 
+/** Which file an import read and what state it is in (never its contents). */
+export interface ImportSource {
+  path: string;
+  /** false: there is no such file. */
+  exists: boolean;
+  /** Why an existing file could not be used. */
+  error?: "parse" | "not_a_file" | "too_large" | "unreadable";
+  errorLine?: number;
+}
+
+export interface SshConfigImport extends ImportSource {
+  entries: ConfigCandidate[];
+}
+
+/** A server from known_hosts: where the user connected, not as whom. */
+export interface KnownCandidate {
+  name: string;
+  address: string;
+  port: number;
+  exists: boolean;
+}
+
+export interface KnownHostsImport extends ImportSource {
+  entries: KnownCandidate[];
+  /** Lines written with HashKnownHosts: their servers cannot be listed. */
+  hashed: number;
+  /** Lines that are not known_hosts entries. */
+  invalid: number;
+  /** The local account name, suggested as the user to sign in with. */
+  defaultUser: string;
+}
+
+export interface ImportResult {
+  imported: Host[];
+  skipped: string[];
+  failed: Record<string, string>;
+}
+
 /** Host-key or credential problem the connect flow can resolve with the user. */
 export interface HostKeyDetails {
   hostId: string;
@@ -532,12 +570,20 @@ export const api = {
     req<{ jobId: string }>("POST", "/api/exec", { jobId, hostIds, command, timeoutSec }),
   cancelExec: (jobId: string) => req<void>("POST", `/api/exec/${jobId}/cancel`),
 
-  sshConfig: () => req<ConfigCandidate[]>("GET", "/api/import/ssh-config"),
-  importSshConfig: (aliases: string[], group: string) =>
-    req<{ imported: Host[]; skipped: string[]; failed: Record<string, string> }>("POST", "/api/import/ssh-config", {
-      aliases,
-      group,
-    }),
+  /** ~/.ssh/config, or the file the user picked. */
+  sshConfig: (path?: string) =>
+    path
+      ? req<SshConfigImport>("POST", "/api/import/ssh-config/read", { path })
+      : req<SshConfigImport>("GET", "/api/import/ssh-config"),
+  importSshConfig: (aliases: string[], group: string, path?: string) =>
+    req<ImportResult>("POST", "/api/import/ssh-config", { aliases, group, path }),
+  /** ~/.ssh/known_hosts, or the file the user picked. */
+  knownHosts: (path?: string) =>
+    path
+      ? req<KnownHostsImport>("POST", "/api/import/known-hosts/read", { path })
+      : req<KnownHostsImport>("GET", "/api/import/known-hosts"),
+  importKnownHosts: (hosts: { name: string; address: string; port: number; user: string; group: string }[]) =>
+    req<ImportResult>("POST", "/api/import/known-hosts", { hosts }),
 };
 
 // ------------------------------------------------------------ Termward Pro

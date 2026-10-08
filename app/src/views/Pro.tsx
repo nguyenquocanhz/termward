@@ -29,7 +29,7 @@ import {
 } from "../lib/api";
 import { useT, resolveLang, type Lang, type TKey } from "../lib/i18n";
 import { ago } from "../lib/format";
-import { confirmAction, errorText, setCloud, toast, useApp } from "../store";
+import { confirmAction, errorText, refreshCloud, setCloud, toast, useApp } from "../store";
 import { Field, Modal, Segmented, SettingRow, Switch } from "../components/ui";
 
 type T = ReturnType<typeof useT>;
@@ -52,6 +52,30 @@ const KINDS: { kind: ChannelKind; label: string }[] = [
   { kind: "slack", label: "Slack" },
 ];
 const kindLabel = (k: string) => KINDS.find((x) => x.kind === k)?.label ?? k;
+
+type ChannelField = "botToken" | "chatId" | "webhookUrl";
+const isChannelField = (f: string): f is ChannelField => f === "botToken" || f === "chatId" || f === "webhookUrl";
+
+// The same shapes as core/internal/cloud/validate.go, so every wrong field is
+// shown at once before anything is sent. Webhooks are checked loosely here:
+// the core canonicalises and checks them exactly.
+const CHANNEL_RULES: Record<ChannelKind, Partial<Record<ChannelField, RegExp>>> = {
+  telegram: {
+    botToken: /^\d{5,20}:[A-Za-z0-9_-]{30,80}$/,
+    chatId: /^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{3,31})$/,
+  },
+  zalo: {
+    botToken: /^\d{1,30}:[A-Za-z0-9_-]{8,200}$/,
+    chatId: /^[A-Za-z0-9_-]{1,64}$/,
+  },
+  discord: { webhookUrl: /^https:\/\/(discord|discordapp)\.com\/api\/(v\d{1,2}\/)?webhooks\/\d+\/[A-Za-z0-9_-]+/i },
+  slack: { webhookUrl: /^https:\/\/hooks\.slack\.com\/services\/T[A-Z0-9]+\/B[A-Z0-9]+\/[A-Za-z0-9]+$/i },
+};
+
+function checkChannel(kind: ChannelKind, v: Record<ChannelField, string>): ChannelField[] {
+  const rules = CHANNEL_RULES[kind];
+  return (Object.keys(rules) as ChannelField[]).filter((f) => !rules[f]!.test(v[f]));
+}
 
 const PLATFORMS: Record<string, string> = {
   windows: "Windows",
@@ -103,7 +127,33 @@ function day(iso: string | undefined, lang: Lang): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(lang === "vi" ? "vi-VN" : "en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+  // 08/01/2027 reads as 8 January in Vietnam but as August elsewhere: spell the month out in English.
+  return lang === "vi"
+    ? d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
+    : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** A channel's delivery error without the "telegram: " prefix the kind badge already shows. */
+function channelError(err: string | undefined): string {
+  return (err ?? "").replace(/^(telegram|zalo|discord|slack):\s*/i, "");
+}
+
+const LAST_EMAIL = "termward.pro.email";
+
+function lastEmail(): string {
+  try {
+    return localStorage.getItem(LAST_EMAIL) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberEmail(email: string) {
+  try {
+    localStorage.setItem(LAST_EMAIL, email);
+  } catch {
+    /* private window: nothing to remember */
+  }
 }
 
 /** "3 minutes ago", fit to follow a word ("Delivered just now", "Hoạt động hôm kia"). */
@@ -172,7 +222,15 @@ function SignedOutNotice({ reason }: { reason: string }) {
     <div className="callout warn" style={{ marginBottom: 12 }}>
       <CircleAlert size={16} style={{ color: "var(--warn)" }} />
       <div className="grow">{t(key)}</div>
-      <button className="btn sm ghost" onClick={() => void cloudApi.dismissNotice().then(setCloud)}>
+      <button
+        className="btn sm ghost"
+        onClick={() =>
+          void cloudApi
+            .dismissNotice()
+            .then(setCloud)
+            .catch(() => undefined)
+        }
+      >
         {t("pro.dismiss")}
       </button>
     </div>
@@ -201,7 +259,10 @@ function SignedOut({ cloud }: { cloud: CloudStatus }) {
         <div className="pro-price">{monthlyPrice(prices, lang, t)}</div>
       </div>
       <div className="pro-hero-side">
-        <SignIn />
+        <div>
+          <div className="pro-signin-title">{t("pro.signInTitle")}</div>
+          <SignIn />
+        </div>
       </div>
     </div>
   );
@@ -211,12 +272,24 @@ function SignIn() {
   const t = useT();
   const lang = useLang();
   const [step, setStep] = useState<"email" | "code">("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(lastEmail);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [limit, setLimit] = useState<DeviceLimit | null>(null);
+  // The code can no longer work (expired, or too many wrong tries): the main
+  // button sends a new one instead of trying again.
+  const [needNew, setNeedNew] = useState(false);
+  // The device-limit answer used the code up; its replace token lives 10
+  // minutes, so closing the dialog keeps it and "Sign in" opens it again.
+  const [limit, setLimit] = useState<{ info: DeviceLimit; at: number } | null>(null);
+  const [limitOpen, setLimitOpen] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const limitExpired = () => {
+    setLimit(null);
+    setLimitOpen(false);
+    setNeedNew(true);
+    setError(t("pro.err.invalid_replace_token"));
+  };
   const codeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -239,6 +312,8 @@ function SignIn() {
       await cloudApi.signInStart(email.trim(), lang);
       setStep("code");
       setCooldown(30);
+      setNeedNew(false);
+      setLimit(null);
       if (again) {
         setCode("");
         toast("info", t("pro.codeResent"));
@@ -253,23 +328,42 @@ function SignIn() {
 
   const verify = async (e: FormEvent) => {
     e.preventDefault();
+    if (needNew) {
+      if (cooldown <= 0) void send(undefined, true);
+      return;
+    }
+    if (limit) {
+      if (Date.now() - limit.at < 9 * 60_000) setLimitOpen(true);
+      else limitExpired();
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       setCloud(await cloudApi.signInVerify(email.trim(), code));
+      rememberEmail(email.trim().toLowerCase());
       toast("success", t("pro.signedInAs", { email: email.trim().toLowerCase() }));
     } catch (err) {
       if (err instanceof ApiError && err.code === "device_limit" && err.details) {
-        setLimit(err.details as DeviceLimit);
+        rememberEmail(email.trim().toLowerCase());
+        setLimit({ info: err.details as DeviceLimit, at: Date.now() });
+        setLimitOpen(true);
       } else {
         setError(proError(err, t));
-        // Select the wrong code so typing the right one replaces it.
-        window.setTimeout(() => codeRef.current?.select(), 0);
+        if (err instanceof ApiError && (err.code === "code_expired" || err.code === "too_many_attempts")) {
+          setNeedNew(true);
+        } else {
+          // Select the wrong code so typing the right one replaces it.
+          window.setTimeout(() => codeRef.current?.select(), 0);
+        }
       }
     } finally {
       setBusy(false);
     }
   };
+
+  // "We sent a code to <b>a@b.vn</b>…" with the address in bold.
+  const [sentBefore, sentAfter] = t("pro.codeSent", { email: "\u0000" }).split("\u0000");
 
   if (step === "email") {
     return (
@@ -300,7 +394,9 @@ function SignIn() {
     <>
       <form className="stack pro-signin" onSubmit={(e) => void verify(e)}>
         <p className="muted" style={{ margin: 0, fontSize: 13, overflowWrap: "anywhere" }}>
-          {t("pro.codeSent", { email: email.trim() })}
+          {sentBefore}
+          <strong style={{ color: "var(--text)" }}>{email.trim()}</strong>
+          {sentAfter}
         </p>
         <Field label={t("pro.codeLabel")} error={error || undefined}>
           <input
@@ -309,18 +405,31 @@ function SignIn() {
             inputMode="numeric"
             autoComplete="one-time-code"
             maxLength={7}
-            placeholder="123456"
+            placeholder="••••••"
+            aria-label={t("pro.codeLabel")}
             value={code}
             onChange={(e) => {
               setCode(e.target.value.replace(/[^\d]/g, "").slice(0, 6));
               setError("");
+              setNeedNew(false);
             }}
           />
         </Field>
-        <button className="btn primary" type="submit" disabled={busy || code.length !== 6}>
-          {busy && <LoaderCircle size={14} className="spin" />}
-          {t("pro.verify")}
-        </button>
+        {needNew ? (
+          <button className="btn primary" type="submit" disabled={busy || cooldown > 0}>
+            {busy ? <LoaderCircle size={14} className="spin" /> : <Mail size={14} />}
+            {cooldown > 0 ? t("pro.resendIn", { s: cooldown }) : t("pro.resend")}
+          </button>
+        ) : limit ? (
+          <button className="btn primary" type="submit">
+            {t("pro.limitPick")}
+          </button>
+        ) : (
+          <button className="btn primary" type="submit" disabled={busy || code.length !== 6}>
+            {busy && <LoaderCircle size={14} className="spin" />}
+            {t("pro.verify")}
+          </button>
+        )}
         <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
           <button
             type="button"
@@ -329,22 +438,28 @@ function SignIn() {
               setStep("email");
               setCode("");
               setError("");
+              setNeedNew(false);
+              setLimit(null);
               setCooldown(0);
             }}
           >
             {t("pro.otherEmail")}
           </button>
-          <button
-            type="button"
-            className="btn sm ghost"
-            disabled={busy || cooldown > 0}
-            onClick={() => void send(undefined, true)}
-          >
-            {cooldown > 0 ? t("pro.resendIn", { s: cooldown }) : t("pro.resend")}
-          </button>
+          {!needNew && (
+            <button
+              type="button"
+              className="btn sm ghost"
+              disabled={busy || cooldown > 0}
+              onClick={() => void send(undefined, true)}
+            >
+              {cooldown > 0 ? t("pro.resendIn", { s: cooldown }) : t("pro.resend")}
+            </button>
+          )}
         </div>
       </form>
-      {limit && <DeviceLimitDialog limit={limit} onClose={() => setLimit(null)} />}
+      {limit && limitOpen && (
+        <DeviceLimitDialog limit={limit.info} onClose={() => setLimitOpen(false)} onExpired={limitExpired} />
+      )}
     </>
   );
 }
@@ -355,7 +470,16 @@ function stalest(devices: CloudDevice[]): string {
   return [...devices].sort((a, b) => seen(a) - seen(b))[0]?.id ?? "";
 }
 
-function DeviceLimitDialog({ limit, onClose }: { limit: DeviceLimit; onClose: () => void }) {
+function DeviceLimitDialog({
+  limit,
+  onClose,
+  onExpired,
+}: {
+  limit: DeviceLimit;
+  onClose: () => void;
+  /** The replace token is used up or too old: a new code is needed. */
+  onExpired: () => void;
+}) {
   const t = useT();
   const [pick, setPick] = useState(() => stalest(limit.devices));
   const [busy, setBusy] = useState(false);
@@ -370,7 +494,8 @@ function DeviceLimitDialog({ limit, onClose }: { limit: DeviceLimit; onClose: ()
       onClose();
       toast("success", t("pro.signedInAs", { email: st.email ?? "" }));
     } catch (e) {
-      setError(proError(e, t));
+      if (e instanceof ApiError && e.code === "invalid_replace_token") onExpired();
+      else setError(proError(e, t));
     } finally {
       setBusy(false);
     }
@@ -433,12 +558,17 @@ function Account({ cloud }: { cloud: CloudStatus }) {
   const t = useT();
   const [refreshing, setRefreshing] = useState(false);
 
-  const refresh = async () => {
+  /** quiet: the warning callout already says what is wrong, so no toast repeats it. */
+  const refresh = async (quiet = false) => {
     setRefreshing(true);
+    const started = Date.now();
     try {
       setCloud(await cloudApi.refresh());
     } catch (e) {
-      toast("error", t("pro.title"), proError(e, t));
+      // A refused connection fails at once: keep the spinner long enough to see that something was tried.
+      await new Promise((r) => window.setTimeout(r, Math.max(0, 600 - (Date.now() - started))));
+      if (quiet) await refreshCloud();
+      else toast("error", t("pro.title"), proError(e, t));
     } finally {
       setRefreshing(false);
     }
@@ -472,7 +602,7 @@ function Account({ cloud }: { cloud: CloudStatus }) {
               {cloud.refreshedAt ? t("pro.staleSince", { ago: since(cloud.refreshedAt, t) }) : t("pro.stale")}
             </div>
           </div>
-          <button className="btn sm" disabled={refreshing} onClick={() => void refresh()}>
+          <button className="btn sm" disabled={refreshing} onClick={() => void refresh(true)}>
             <RefreshCw size={13} className={refreshing ? "spin" : undefined} />
             {t("pro.retry")}
           </button>
@@ -512,6 +642,10 @@ function Plan({ cloud }: { cloud: CloudStatus }) {
   const [busy, setBusy] = useState<number | null>(null);
   const order = cloud.order;
   const waiting = !!order?.waiting;
+  // With a plan running, the packs stay folded behind "Extend" so the
+  // channels are not pushed off the screen; without one, they are the point.
+  const [showPacks, setShowPacks] = useState(false);
+  const packsOpen = !active || showPacks || (!!order && order.status !== "paid");
 
   const buy = async (months: number) => {
     setBusy(months);
@@ -556,44 +690,48 @@ function Plan({ cloud }: { cloud: CloudStatus }) {
             </div>
           )}
         </div>
+        {!packsOpen && (
+          <button className="btn sm" onClick={() => setShowPacks(true)}>
+            {t("pro.extend")}
+          </button>
+        )}
       </div>
 
       {order && <OrderBanner cloud={cloud} />}
 
-      <div>
-        <div className="field-label" style={{ marginBottom: 8 }}>
-          {active || plan?.paidUntil ? t("pro.extendTitle") : t("pro.buyTitle")}
-          <span className="faint" style={{ fontWeight: 400 }}>
-            {" "}
-            · {monthlyPrice(prices, lang, t)}
-          </span>
+      {packsOpen && (
+        <div>
+          <div className="pro-packs-head">
+            <span className="field-label">{active || plan?.paidUntil ? t("pro.extendTitle") : t("pro.buyTitle")}</span>
+            <span className="faint">{monthlyPrice(prices, lang, t)}</span>
+          </div>
+          <div className="pro-packs">
+            {[1, 3, 6, 12].map((m) => {
+              const p = prices.find((x) => x.months === m) ?? FALLBACK_PRICES.find((x) => x.months === m)!;
+              const base = prices.find((x) => x.months === 1) ?? FALLBACK_PRICES[0];
+              const perMonth = Math.round(p.total / m);
+              return (
+                <button key={m} className="pro-pack" disabled={busy !== null || waiting} onClick={() => void buy(m)}>
+                  <span className="m">{m === 1 ? t("pro.month1") : t("pro.months", { n: m })}</span>
+                  <span className="v">{vnd(p.total, lang)}</span>
+                  <span className="s">
+                    {busy === m ? (
+                      <LoaderCircle size={12} className="spin" />
+                    ) : perMonth < base.total ? (
+                      t("pro.perMonth", { price: vnd(perMonth, lang) })
+                    ) : (
+                      t("pro.inclVat", { vat: vnd(p.vat, lang) })
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="faint" style={{ fontSize: 12, margin: "8px 0 0" }}>
+            {t("pro.payNote")}
+          </p>
         </div>
-        <div className="pro-packs">
-          {[1, 3, 6, 12].map((m) => {
-            const p = prices.find((x) => x.months === m) ?? FALLBACK_PRICES.find((x) => x.months === m)!;
-            const base = prices.find((x) => x.months === 1) ?? FALLBACK_PRICES[0];
-            const perMonth = Math.round(p.total / m);
-            return (
-              <button key={m} className="pro-pack" disabled={busy !== null || waiting} onClick={() => void buy(m)}>
-                <span className="m">{m === 1 ? t("pro.month1") : t("pro.months", { n: m })}</span>
-                <span className="v">{vnd(p.total, lang)}</span>
-                <span className="s">
-                  {busy === m ? (
-                    <LoaderCircle size={12} className="spin" />
-                  ) : perMonth < base.total ? (
-                    t("pro.perMonth", { price: vnd(perMonth, lang) })
-                  ) : (
-                    t("pro.inclVat", { vat: vnd(p.vat, lang) })
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <p className="faint" style={{ fontSize: 12, margin: "8px 0 0" }}>
-          {t("pro.payNote")}
-        </p>
-      </div>
+      )}
     </div>
   );
 }
@@ -604,7 +742,14 @@ function OrderBanner({ cloud }: { cloud: CloudStatus }) {
   const o = cloud.order!;
   const amount = o.amount || (cloud.prices.find((p) => p.months === o.months)?.total ?? 0);
   const [checking, setChecking] = useState(false);
-  const dismiss = () => void cloudApi.stopWaiting().then(setCloud);
+  // PayOS links live 30 minutes: once that has passed, reopening one only shows an error page.
+  const expires = o.expiresAt ? Date.parse(o.expiresAt) : NaN;
+  const linkOpen = o.waiting && !(expires < Date.now());
+  const dismiss = () =>
+    void cloudApi
+      .stopWaiting()
+      .then(setCloud)
+      .catch((e: unknown) => toast("error", t("pro.title"), proError(e, t)));
   const check = async () => {
     setChecking(true);
     try {
@@ -624,7 +769,10 @@ function OrderBanner({ cloud }: { cloud: CloudStatus }) {
         <div className="grow">
           <strong>{t("pro.paid")}</strong>
           {cloud.plan?.active && (
-            <div className="muted">{t("pro.paidBody", { date: day(cloud.plan.paidUntil, lang) })}</div>
+            <div className="muted">
+              {t("pro.paidBody", { date: day(cloud.plan.paidUntil, lang) })}
+              {cloud.channels.length === 0 && ` ${t("pro.paidNext")}`}
+            </div>
           )}
         </div>
         <button className="btn sm" onClick={dismiss}>
@@ -660,21 +808,27 @@ function OrderBanner({ cloud }: { cloud: CloudStatus }) {
             })}
           </div>
         ) : null}
-        {o.waiting && <div className="muted">{t("pro.waitingBody")}</div>}
+        <div className="muted">{t(o.waiting ? "pro.waitingBody" : "pro.timedOutBody")}</div>
         <div className="row" style={{ gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-          {o.checkoutUrl && (
+          {o.checkoutUrl && linkOpen && (
             <button className="btn sm" onClick={() => openExternal(o.checkoutUrl!)}>
               <ExternalLink size={13} />
               {t("pro.reopen")}
             </button>
           )}
-          <button className="btn sm ghost" disabled={checking} onClick={() => void check()}>
+          <button className={`btn sm${linkOpen ? " ghost" : ""}`} disabled={checking} onClick={() => void check()}>
             {checking && <LoaderCircle size={13} className="spin" />}
             {t("pro.checkNow")}
           </button>
-          <button className="btn sm ghost" title={t("pro.stopWaitingHint")} onClick={dismiss}>
-            {t("pro.stopWaiting")}
-          </button>
+          {o.waiting ? (
+            <button className="btn sm ghost" title={t("pro.stopWaitingHint")} onClick={dismiss}>
+              {t("pro.stopWaiting")}
+            </button>
+          ) : (
+            <button className="btn sm ghost" onClick={dismiss}>
+              {t("pro.dismiss")}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -695,7 +849,7 @@ function Channels({ cloud }: { cloud: CloudStatus }) {
     try {
       const r = await cloudApi.testChannel(c.id, lang);
       if (r.ok) toast("success", t("pro.testOk", { name: c.name }));
-      else toast("error", t("pro.testFailed", { name: c.name }), r.error);
+      else toast("error", t("pro.testFailed", { name: c.name }), channelError(r.error));
     } catch (e) {
       toast("error", t("pro.testFailed", { name: c.name }), proError(e, t));
     } finally {
@@ -727,15 +881,20 @@ function Channels({ cloud }: { cloud: CloudStatus }) {
             {t("pro.channelsHint")}
           </div>
         </div>
-        <button className="btn sm" disabled={!canAdd || cloud.channels.length >= 10} onClick={() => setAdding(true)}>
+        <button
+          className="btn sm"
+          disabled={!canAdd || cloud.channels.length >= 10}
+          title={canAdd && cloud.channels.length >= 10 ? t("pro.err.channel_limit") : undefined}
+          onClick={() => setAdding(true)}
+        >
           <Plus size={14} />
           {t("pro.addChannel")}
         </button>
       </div>
       {!canAdd && (
         <div className="pro-row muted" style={{ fontSize: 13 }}>
-          <Info size={14} />
-          {t("pro.needPlan")}
+          <Info size={14} style={{ flexShrink: 0 }} />
+          {cloud.channels.length > 0 ? t("pro.channelsPaused") : t("pro.needPlan")}
         </div>
       )}
       {cloud.channels.length === 0 && canAdd && (
@@ -756,7 +915,7 @@ function Channels({ cloud }: { cloud: CloudStatus }) {
                   t("pro.lastOk", { ago: since(c.lastResult.at, t) })
                 ) : (
                   <span style={{ color: "var(--crit)", overflowWrap: "anywhere" }}>
-                    {t("pro.lastFail", { ago: since(c.lastResult.at, t), err: c.lastResult.error ?? "" })}
+                    {t("pro.lastFail", { ago: since(c.lastResult.at, t), err: channelError(c.lastResult.error) })}
                   </span>
                 )
               ) : (
@@ -797,18 +956,30 @@ function ChannelDialog({ onClose }: { onClose: () => void }) {
   const [chatId, setChatId] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [busy, setBusy] = useState(false);
-  const [field, setField] = useState<{ name: string; text: string } | null>(null);
+  const [fields, setFields] = useState<Partial<Record<ChannelField, string>>>({});
   const [error, setError] = useState("");
   const bot = kind === "telegram" || kind === "zalo";
   const ready = bot ? botToken.trim() !== "" && chatId.trim() !== "" : webhookUrl.trim() !== "";
 
-  const fieldError = (f: string) => (field?.name === f ? field.text : undefined);
+  const fieldError = (f: ChannelField) => fields[f];
+  const clearField = (f: ChannelField) =>
+    setFields((prev) => {
+      const next = { ...prev };
+      delete next[f];
+      return next;
+    });
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     if (!ready) return;
+    // Point at every wrong field at once; the core checks again, exactly.
+    const bad = checkChannel(kind, { botToken: botToken.trim(), chatId: chatId.trim(), webhookUrl: webhookUrl.trim() });
+    if (bad.length) {
+      setFields(Object.fromEntries(bad.map((f) => [f, t(`ch.err.${kind}.${f}` as TKey)])));
+      return;
+    }
     setBusy(true);
-    setField(null);
+    setFields({});
     setError("");
     const input: ChannelInput = bot
       ? { kind, name: name.trim(), botToken: botToken.trim(), chatId: chatId.trim() }
@@ -820,13 +991,8 @@ function ChannelDialog({ onClose }: { onClose: () => void }) {
       onClose();
     } catch (err) {
       const f = err instanceof ApiError ? (err.details as { field?: string } | undefined)?.field : undefined;
-      if (
-        err instanceof ApiError &&
-        err.code === "invalid_config" &&
-        f &&
-        ["botToken", "chatId", "webhookUrl"].includes(f)
-      ) {
-        setField({ name: f, text: t(`ch.err.${kind}.${f}` as TKey) });
+      if (err instanceof ApiError && err.code === "invalid_config" && f && isChannelField(f)) {
+        setFields({ [f]: t(`ch.err.${kind}.${f}` as TKey) });
       } else {
         setError(proError(err, t));
       }
@@ -865,7 +1031,7 @@ function ChannelDialog({ onClose }: { onClose: () => void }) {
                 setWebhookUrl("");
               }
               setKind(k);
-              setField(null);
+              setFields({});
               setError("");
             }}
             options={KINDS.map((k) => ({ value: k.kind, label: k.label }))}
@@ -891,7 +1057,7 @@ function ChannelDialog({ onClose }: { onClose: () => void }) {
                 value={botToken}
                 onChange={(e) => {
                   setBotToken(e.target.value);
-                  setField(null);
+                  clearField("botToken");
                 }}
               />
             </Field>
@@ -904,7 +1070,7 @@ function ChannelDialog({ onClose }: { onClose: () => void }) {
                 value={chatId}
                 onChange={(e) => {
                   setChatId(e.target.value);
-                  setField(null);
+                  clearField("chatId");
                 }}
               />
             </Field>
@@ -922,7 +1088,7 @@ function ChannelDialog({ onClose }: { onClose: () => void }) {
               value={webhookUrl}
               onChange={(e) => {
                 setWebhookUrl(e.target.value);
-                setField(null);
+                clearField("webhookUrl");
               }}
             />
           </Field>
@@ -966,7 +1132,7 @@ function Forwarding({ cloud }: { cloud: CloudStatus }) {
         <div className="grow">
           <strong>{t("pro.forwarding")}</strong>
           <div className="muted" style={{ fontSize: 12.5 }}>
-            {t("pro.fwMuted")}
+            {t("pro.fwHint")}
           </div>
           {q.pending > 0 && (
             <div style={{ fontSize: 12.5, color: "var(--warn)", marginTop: 4 }}>
@@ -984,7 +1150,7 @@ function Forwarding({ cloud }: { cloud: CloudStatus }) {
       <SettingRow title={t("pro.fwRecoveries")} hint={t("pro.fwRecoveriesHint")}>
         <Switch label={t("pro.fwRecoveries")} on={f.recoveries} onChange={(v) => void save({ ...f, recoveries: v })} />
       </SettingRow>
-      <SettingRow title={t("pro.fwLang")} last>
+      <SettingRow title={t("pro.fwLang")}>
         <Segmented<"vi" | "en">
           value={f.lang}
           onChange={(v) => void save({ ...f, lang: v })}
@@ -994,6 +1160,7 @@ function Forwarding({ cloud }: { cloud: CloudStatus }) {
           ]}
         />
       </SettingRow>
+      <p className="faint pro-foot-note">{t("pro.fwMuted")}</p>
     </div>
   );
 }

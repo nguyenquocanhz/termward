@@ -19,7 +19,7 @@ import { findingText } from "../lib/findings";
 import { stripHost } from "../lib/util";
 import { ago, bytesKb, clock, duration, pct } from "../lib/format";
 import {
-  confirmAction,
+  confirmDeleteHost,
   ensureConnected,
   errorText,
   navigate,
@@ -64,18 +64,7 @@ export function HostDetail({ hostId }: { hostId: string }) {
     if (await ensureConnected(host.id)) await api.check(host.id);
   };
 
-  const remove = () =>
-    confirmAction({
-      title: t("host.confirmDelete", { name: host.name }),
-      body: t("host.confirmDeleteBody"),
-      confirm: t("common.delete"),
-      danger: true,
-      run: async () => {
-        await api.deleteHost(host.id);
-        await refreshHosts();
-        navigate({ name: "overview" });
-      },
-    });
+  const remove = () => confirmDeleteHost(host);
 
   const enableMonitoring = async () => {
     try {

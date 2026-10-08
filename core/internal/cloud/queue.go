@@ -40,8 +40,9 @@ type queue struct {
 // loadQueue reads the queue file. A missing or damaged file is an empty
 // queue: losing pending alerts is better than not starting. The file is not
 // trusted further than the queue's own bounds: events the server would refuse
-// are dropped, at most queueMax (the newest) are kept, and times in the future
-// are brought back to now so every entry still expires.
+// are dropped, texts are cut to the contract's lengths, at most queueMax (the
+// newest) are kept, and times in the future are brought back to now so every
+// entry still expires.
 func loadQueue(path string, now time.Time) *queue {
 	q := &queue{path: path}
 	b, err := os.ReadFile(path)
@@ -63,6 +64,12 @@ func loadQueue(path string, now time.Time) *queue {
 			it.NextAt = now
 		}
 		it.Attempts = min(max(it.Attempts, 0), maxAttempts-1)
+		// The cuts toEvent makes, so one edited entry cannot push its batch
+		// over the server's request size limit (a 413 drops the whole batch).
+		e := &it.Event
+		e.Host = EventHost{Name: cut(e.Host.Name, 253), Address: cut(e.Host.Address, 253)}
+		e.Title = Text{EN: cut(e.Title.EN, titleMax), VI: cut(e.Title.VI, titleMax)}
+		e.Body = Text{EN: cut(e.Body.EN, bodyMax), VI: cut(e.Body.VI, bodyMax)}
 		q.items = append(q.items, it)
 	}
 	if over := len(q.items) - queueMax; over > 0 {

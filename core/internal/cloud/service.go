@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -201,8 +202,9 @@ func New(cfg Config) (*Service, error) {
 	if sysID == nil {
 		sysID = systemMachineID
 	}
+	base = strings.TrimRight(base, "/")
 	s := &Service{
-		c:           &client{base: strings.TrimRight(base, "/"), http: hc, now: now},
+		c:           &client{base: base, http: hc, now: now},
 		sec:         cfg.Secrets,
 		version:     appVersion(cfg.Version),
 		platform:    platformName(cfg.Platform),
@@ -219,7 +221,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	s.st.Forwarding = DefaultForwarding()
 	if cfg.DataDir != "" {
-		s.dir = filepath.Join(cfg.DataDir, "cloud")
+		s.dir = stateDir(cfg.DataDir, base)
 		if err := os.MkdirAll(s.dir, 0o700); err != nil {
 			return nil, err
 		}
@@ -243,6 +245,21 @@ func New(cfg Config) (*Service, error) {
 		s.saveLocked()
 	}
 	return s, nil
+}
+
+// stateDir keeps each server's account apart: the production server uses
+// <data dir>/cloud, any other (TERMWARD_CLOUD_URL) a directory of its own, so
+// it gets its own install id (hence device key), state and queue. Sharing them
+// would send another server signed requests of the production device (the host
+// is not signed, so they could be replayed there for 300 s), and that server's
+// device_revoked would delete the production key.
+func stateDir(dataDir, base string) string {
+	dir := filepath.Join(dataDir, "cloud")
+	if base == DefaultBaseURL {
+		return dir
+	}
+	sum := sha256.Sum256([]byte(base))
+	return filepath.Join(dir, "servers", hex.EncodeToString(sum[:8]))
 }
 
 // keyName is the secret store name of this install's device key.
@@ -585,6 +602,9 @@ func (s *Service) signedIn(ctx context.Context, key ed25519.PrivateKey, reg regi
 		Prices: prices, Forwarding: fw, LangChosen: chosen,
 	}
 	s.key = key
+	// Nothing queued before this sign-in belongs to this account.
+	s.q.clear()
+	s.saveQueueLocked()
 	s.lastErr, s.sendErr, s.retryAt, s.sendFails = "", "", time.Time{}, 0
 	s.saveLocked()
 	s.mu.Unlock()
@@ -937,7 +957,8 @@ func (s *Service) Enqueue(a health.Alert) {
 func (s *Service) accept(a health.Alert) {
 	level := eventLevel(a)
 	s.mu.Lock()
-	ok := s.st.DeviceID != "" && !s.st.PlanInactive && s.st.Forwarding.allows(level) &&
+	dev := s.st.DeviceID
+	ok := dev != "" && !s.st.PlanInactive && s.st.Forwarding.allows(level) &&
 		(s.st.RefreshedAt.IsZero() || len(s.st.Channels) > 0)
 	s.mu.Unlock()
 	if !ok {
@@ -952,6 +973,12 @@ func (s *Service) accept(a health.Alert) {
 		return
 	}
 	s.mu.Lock()
+	if s.st.DeviceID != dev {
+		// Signed out (or in again) meanwhile: the alert belongs to that
+		// account and must not go out under the next one.
+		s.mu.Unlock()
+		return
+	}
 	if dropped := s.q.push(ev, s.now()); dropped > 0 {
 		s.logf("termward cloud: alert queue full, dropped %d old alerts", dropped)
 	}

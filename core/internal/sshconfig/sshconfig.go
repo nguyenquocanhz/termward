@@ -4,9 +4,11 @@ package sshconfig
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"os"
-	"os/user"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,6 +30,40 @@ func DefaultPath() string {
 	return filepath.Join(home, ".ssh", "config")
 }
 
+// ParseError means the file is not valid ssh_config syntax. It carries only
+// the line number: the parser's own message can quote the file, and a file the
+// user picked by mistake (a private key, say) must not be echoed back.
+type ParseError struct {
+	Line int // 0 when unknown
+}
+
+func (e *ParseError) Error() string {
+	if e.Line > 0 {
+		return fmt.Sprintf("not a valid SSH config (line %d)", e.Line)
+	}
+	return "not a valid SSH config"
+}
+
+var parsePos = regexp.MustCompile(`^\((\d+), \d+\)`)
+
+func decode(r io.Reader) (cfg *ssh_config.Config, err error) {
+	defer func() {
+		// The parser reports some problems by panicking with a non-string.
+		if rec := recover(); rec != nil {
+			cfg, err = nil, &ParseError{}
+		}
+	}()
+	cfg, err = ssh_config.Decode(r)
+	if err != nil {
+		pe := &ParseError{}
+		if m := parsePos.FindStringSubmatch(err.Error()); m != nil {
+			pe.Line, _ = strconv.Atoi(m[1])
+		}
+		return nil, pe
+	}
+	return cfg, nil
+}
+
 // Read lists concrete Host aliases (wildcard patterns only supply defaults).
 func Read(path string) ([]Entry, error) {
 	f, err := os.Open(path)
@@ -38,18 +74,12 @@ func Read(path string) ([]Entry, error) {
 		return nil, err
 	}
 	defer f.Close()
-	cfg, err := ssh_config.Decode(f)
+	cfg, err := decode(f)
 	if err != nil {
 		return nil, err
 	}
 
-	defaultUser := ""
-	if u, err := user.Current(); err == nil {
-		defaultUser = u.Username
-		if i := strings.LastIndexAny(defaultUser, `\`); i >= 0 { // DOMAIN\user on Windows
-			defaultUser = defaultUser[i+1:]
-		}
-	}
+	defaultUser := DefaultUser()
 
 	var out []Entry
 	seen := map[string]bool{}

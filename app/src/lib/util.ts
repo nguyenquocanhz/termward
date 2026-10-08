@@ -1,10 +1,10 @@
 import type { Host } from "./api";
 import { errorText, toast } from "../store";
+import { writeClipboard } from "./clipboard";
 
 export async function copyText(text: string, okMessage: string) {
   try {
-    if (window.termward) await window.termward.copy(text);
-    else await navigator.clipboard.writeText(text);
+    await writeClipboard(text);
     toast("success", okMessage);
   } catch (e) {
     toast("error", errorText(e));

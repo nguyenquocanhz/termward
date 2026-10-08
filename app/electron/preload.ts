@@ -13,7 +13,9 @@ contextBridge.exposeInMainWorld("termward", {
     };
   },
   pickKeyFile: () => ipcRenderer.invoke("dialog:pickKey"),
+  pickSshFile: (kind: "config" | "known_hosts") => ipcRenderer.invoke("dialog:pickSshFile", kind),
   copy: (text: string) => ipcRenderer.invoke("clipboard:write", text),
+  readClipboard: () => ipcRenderer.invoke("clipboard:read"),
   openExternal: (url: string) => ipcRenderer.send("open-external", url),
   setTheme: (mode: "light" | "dark") => ipcRenderer.send("theme:changed", mode),
   quit: () => ipcRenderer.send("app:quit"),

@@ -15,6 +15,7 @@ export function Settings() {
   const needSudo = useApp((s) => Object.values(s.hwFleet).filter((h) => h.error === "sudo_required").length);
   const theme = useApp((s) => s.theme);
   const lang = useApp((s) => s.lang);
+  const confirmPaste = useApp((s) => s.confirmPaste);
   const [draft, setDraft] = useState<SettingsT | null>(saved);
   const [version, setVersion] = useState("");
 
@@ -143,6 +144,13 @@ export function Settings() {
       <ProSection />
 
       <PlatformSettings />
+
+      <h2 className="section">{t("set.terminal")}</h2>
+      <div className="card">
+        <SettingRow title={t("set.confirmPaste")} hint={t("set.confirmPasteHint")} last>
+          <Switch on={confirmPaste} onChange={(v) => setPrefs({ confirmPaste: v })} label={t("set.confirmPaste")} />
+        </SettingRow>
+      </div>
 
       <h2 className="section">{t("set.appearance")}</h2>
       <div className="card">
