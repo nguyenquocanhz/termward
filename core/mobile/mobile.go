@@ -31,11 +31,31 @@ type Notifier interface {
 }
 
 var (
-	mu    sync.Mutex
-	inst  *app.Instance
-	token string
-	lang  = "en"
+	mu         sync.Mutex
+	inst       *app.Instance
+	token      string
+	lang       = "en"
+	machineID  string
+	deviceName string
 )
+
+// SetMachineID passes the platform machine id (Android Settings.Secure
+// ANDROID_ID, iOS identifierForVendor) used for the Termward Pro device
+// fingerprint. Call it before Start; apps that never call it get a random id
+// kept in the encrypted vault.
+func SetMachineID(id string) {
+	mu.Lock()
+	machineID = id
+	mu.Unlock()
+}
+
+// SetDeviceName names this device in the Termward Pro device list (e.g.
+// "Samsung SM-S918B"). Call it before Start.
+func SetDeviceName(name string) {
+	mu.Lock()
+	deviceName = name
+	mu.Unlock()
+}
 
 // Start runs the core. vaultKeyHex is a 32-byte key (hex) that the app keeps
 // in the platform keystore; it encrypts remembered passwords/passphrases.
@@ -62,11 +82,13 @@ func Start(dataDir, vaultKeyHex, language string, n Notifier) (int, error) {
 	token = hex.EncodeToString(b)
 
 	cfg := app.Config{
-		DataDir: dataDir,
-		Addr:    "127.0.0.1:0",
-		Token:   token,
-		Version: version,
-		Secrets: vault,
+		DataDir:    dataDir,
+		Addr:       "127.0.0.1:0",
+		Token:      token,
+		Version:    version,
+		Secrets:    vault,
+		MachineID:  machineID,
+		DeviceName: deviceName,
 	}
 	if n != nil {
 		cfg.OnAlert = func(a health.Alert) {

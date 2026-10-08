@@ -540,6 +540,121 @@ export const api = {
     }),
 };
 
+// ------------------------------------------------------------ Termward Pro
+
+export type ChannelKind = "telegram" | "zalo" | "discord" | "slack";
+
+export interface CloudDevice {
+  id: string;
+  name: string;
+  platform: string;
+  appVersion: string;
+  createdAt?: string;
+  lastSeen?: string;
+  current: boolean;
+}
+
+export interface CloudChannel {
+  id: string;
+  kind: ChannelKind;
+  name: string;
+  createdAt?: string;
+  lastResult: { ok: boolean; at?: string; error?: string } | null;
+}
+
+export interface CloudPlan {
+  active: boolean;
+  paidUntil?: string;
+  maxDevices?: number;
+}
+
+export interface CloudPrice {
+  months: number;
+  amount: number;
+  vat: number;
+  total: number;
+  currency: string;
+}
+
+export interface CloudForwarding {
+  critical: boolean;
+  warnings: boolean;
+  recoveries: boolean;
+  lang: "vi" | "en";
+}
+
+export type OrderStatus = "pending" | "paid" | "cancelled" | "expired";
+
+export interface CloudOrder {
+  orderCode: number;
+  status?: OrderStatus;
+  months?: number;
+  amount?: number;
+  checkoutUrl?: string;
+  expiresAt?: string;
+  paidAt?: string;
+  plan?: CloudPlan;
+}
+
+export interface CloudStatus {
+  signedIn: boolean;
+  email?: string;
+  deviceId?: string;
+  deviceName?: string;
+  plan?: CloudPlan;
+  planInactive: boolean;
+  devices: CloudDevice[];
+  channels: CloudChannel[];
+  prices: CloudPrice[];
+  limits?: { alertsPerDay: number; usedToday: number };
+  refreshedAt?: string;
+  lastError?: string;
+  forwarding: CloudForwarding;
+  queue: { pending: number; lastSentAt?: string; lastError?: string; retryAt?: string };
+  order?: CloudOrder & { startedAt: string; waiting: boolean };
+  signedOutReason?: "" | "revoked" | "mismatch" | "key_lost";
+  machineSource?: "native" | "system" | "generated";
+  server: string;
+}
+
+export interface ChannelInput {
+  kind: ChannelKind;
+  name: string;
+  botToken?: string;
+  chatId?: string;
+  webhookUrl?: string;
+}
+
+/** Details of a 409 device_limit answer to sign-in. */
+export interface DeviceLimit {
+  max: number;
+  devices: CloudDevice[];
+  replaceToken: string;
+}
+
+export const cloudApi = {
+  status: () => req<CloudStatus>("GET", "/api/cloud/status"),
+  refresh: () => req<CloudStatus>("POST", "/api/cloud/refresh"),
+  signInStart: (email: string, lang: string) =>
+    req<{ ok: boolean }>("POST", "/api/cloud/signin/start", { email, lang }),
+  signInVerify: (email: string, code: string) => req<CloudStatus>("POST", "/api/cloud/signin/verify", { email, code }),
+  signInReplace: (replaceToken: string, revokeDeviceId: string) =>
+    req<CloudStatus>("POST", "/api/cloud/signin/replace", { replaceToken, revokeDeviceId }),
+  signOut: () => req<{ revoked: boolean; status: CloudStatus }>("POST", "/api/cloud/signout"),
+  dismissNotice: () => req<CloudStatus>("POST", "/api/cloud/notice/dismiss"),
+  checkout: (months: number) =>
+    req<{ order: CloudOrder; status: CloudStatus }>("POST", "/api/cloud/checkout", { months }),
+  order: (code: number) => req<CloudOrder>("GET", `/api/cloud/orders/${code}`),
+  stopWaiting: () => req<CloudStatus>("DELETE", "/api/cloud/order"),
+  revokeDevice: (id: string) => req<CloudStatus>("DELETE", `/api/cloud/devices/${encodeURIComponent(id)}`),
+  addChannel: (c: ChannelInput) =>
+    req<{ channel: CloudChannel; status: CloudStatus }>("POST", "/api/cloud/channels", c),
+  deleteChannel: (id: string) => req<CloudStatus>("DELETE", `/api/cloud/channels/${encodeURIComponent(id)}`),
+  testChannel: (id: string, lang: string) =>
+    req<{ ok: boolean; error?: string }>("POST", `/api/cloud/channels/${encodeURIComponent(id)}/test`, { lang }),
+  setForwarding: (f: CloudForwarding) => req<CloudStatus>("PUT", "/api/cloud/forwarding", f),
+};
+
 /** Subscribes to server events, reconnecting with backoff. Returns a stop function. */
 export function subscribeEvents(
   onEvent: (type: string, data: unknown) => void,

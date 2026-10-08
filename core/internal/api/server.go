@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nguyenquocanhz/termward/core/internal/cloud"
 	"github.com/nguyenquocanhz/termward/core/internal/health"
 	"github.com/nguyenquocanhz/termward/core/internal/keys"
 	"github.com/nguyenquocanhz/termward/core/internal/secret"
@@ -31,6 +32,7 @@ type Server struct {
 	pool    *sshx.Pool
 	monitor *health.Monitor
 	hub     *Hub
+	cloud   *cloud.Service // Termward Pro (nil in tests that do not need it)
 
 	ctx     context.Context // cancelled on shutdown; parent of background jobs
 	jobs    sync.Map        // exec job id -> context.CancelFunc
@@ -47,6 +49,7 @@ type Deps struct {
 	Pool    *sshx.Pool
 	Monitor *health.Monitor
 	Hub     *Hub
+	Cloud   *cloud.Service
 	// HardwareInterval replaces the daily/weekly hardware check period when
 	// set (development and end-to-end tests).
 	HardwareInterval time.Duration
@@ -55,7 +58,7 @@ type Deps struct {
 func New(ctx context.Context, d Deps) *Server {
 	s := &Server{
 		token: d.Token, store: d.Store, keys: d.Keys, secrets: d.Secrets,
-		pool: d.Pool, monitor: d.Monitor, hub: d.Hub, ctx: ctx, dataDir: d.Store.Dir(),
+		pool: d.Pool, monitor: d.Monitor, hub: d.Hub, cloud: d.Cloud, ctx: ctx, dataDir: d.Store.Dir(),
 	}
 	s.hw = newHWScheduler(s)
 	s.hw.override = d.HardwareInterval
@@ -106,6 +109,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/import/ssh-config", s.readSSHConfig)
 	mux.HandleFunc("POST /api/import/ssh-config", s.importSSHConfig)
+
+	s.cloudRoutes(mux)
 
 	mux.HandleFunc("GET /ws/events", s.events)
 	mux.HandleFunc("GET /ws/terminal", s.terminal)

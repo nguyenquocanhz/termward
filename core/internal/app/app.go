@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nguyenquocanhz/termward/core/internal/api"
+	"github.com/nguyenquocanhz/termward/core/internal/cloud"
 	"github.com/nguyenquocanhz/termward/core/internal/health"
 	"github.com/nguyenquocanhz/termward/core/internal/keys"
 	"github.com/nguyenquocanhz/termward/core/internal/secret"
@@ -36,6 +37,13 @@ type Config struct {
 	// HardwareInterval replaces the daily/weekly hardware check period
 	// (development only).
 	HardwareInterval time.Duration
+	// MachineID is the platform machine id passed by the mobile apps
+	// (ANDROID_ID, identifierForVendor) for the Termward Pro device
+	// fingerprint; desktop builds read it from the OS.
+	MachineID string
+	// DeviceName names this device in the Termward Pro device list
+	// (default: the host name).
+	DeviceName string
 }
 
 type Instance struct {
@@ -69,20 +77,41 @@ func Start(parent context.Context, cfg Config) (*Instance, error) {
 	}
 	pool := sshx.NewPool(st, km, sec, known)
 
-	ctx, cancel := context.WithCancel(parent)
 	hub := api.NewHub()
-	publish := hub.Publish
-	if cfg.OnAlert != nil {
-		publish = func(kind string, payload any) {
-			hub.Publish(kind, payload)
-			if a, ok := payload.(health.Alert); ok && kind == "alert" {
-				cfg.OnAlert(a)
-			}
+	pro, err := cloud.New(cloud.Config{
+		DataDir:    cfg.DataDir,
+		Secrets:    sec,
+		Version:    cfg.Version,
+		MachineID:  cfg.MachineID,
+		DeviceName: cfg.DeviceName,
+		Host: func(id string) (string, bool) {
+			h, err := st.Host(id)
+			return h.Address, err == nil
+		},
+		OnChange: func(s cloud.Status) { hub.Publish("cloud", s) },
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	// Every alert, health or hardware, passes through here exactly once (the
+	// monitor publishes both): the UI, native notifications and Termward Pro
+	// forwarding all hang off this one place. None of them may block.
+	publish := func(kind string, payload any) {
+		hub.Publish(kind, payload)
+		a, ok := payload.(health.Alert)
+		if !ok || kind != "alert" {
+			return
+		}
+		pro.Enqueue(a)
+		if cfg.OnAlert != nil {
+			cfg.OnAlert(a)
 		}
 	}
 	mon := health.NewMonitor(st, pool, publish)
 	srv := api.New(ctx, api.Deps{
-		Token: cfg.Token, Store: st, Keys: km, Secrets: sec, Pool: pool, Monitor: mon, Hub: hub,
+		Token: cfg.Token, Store: st, Keys: km, Secrets: sec, Pool: pool, Monitor: mon, Hub: hub, Cloud: pro,
 		HardwareInterval: cfg.HardwareInterval,
 	})
 	srv.Version = cfg.Version
@@ -101,6 +130,7 @@ func Start(parent context.Context, cfg Config) (*Instance, error) {
 	}
 	go mon.Run(ctx)
 	go srv.RunHardwareScheduler(ctx)
+	go pro.Run(ctx)
 	go func() {
 		defer close(inst.done)
 		if err := inst.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

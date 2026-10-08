@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   Activity,
+  BadgeCheck,
   KeyRound,
   LayoutGrid,
   LoaderCircle,
@@ -10,6 +11,7 @@ import {
   Power,
   Search,
   Settings2,
+  Sparkles,
   SquareTerminal,
   Sun,
   Zap,
@@ -24,8 +26,9 @@ import type { Host } from "../lib/api";
 
 export function Sidebar({ dark }: { dark: boolean }) {
   const t = useT();
-  const { hosts, statuses, view, tabs, settings, online, drawer } = useApp(
+  const { hosts, statuses, view, tabs, settings, online, drawer, cloud } = useApp(
     useShallow((s) => ({
+      cloud: s.cloud,
       hosts: s.hosts,
       statuses: s.statuses,
       view: s.view,
@@ -70,6 +73,9 @@ export function Sidebar({ dark }: { dark: boolean }) {
     { view: { name: "settings" }, icon: Settings2, label: t("nav.settings") },
   ];
 
+  const proView = view.name === "settings" && view.section === "pro";
+  const proActive = !!cloud?.signedIn && !!cloud.plan?.active;
+
   const selectedHost = view.name === "host" || view.name === "hardware" ? view.hostId : null;
 
   return (
@@ -91,7 +97,7 @@ export function Sidebar({ dark }: { dark: boolean }) {
         {nav.map((n) => (
           <button
             key={n.view.name}
-            className={`nav-item${view.name === n.view.name ? " active" : ""}`}
+            className={`nav-item${view.name === n.view.name && !proView ? " active" : ""}`}
             onClick={() => navigate(n.view)}
           >
             <n.icon size={16} />
@@ -99,6 +105,21 @@ export function Sidebar({ dark }: { dark: boolean }) {
             {n.count !== undefined && <span className={`count${n.attention ? " attention" : ""}`}>{n.count}</span>}
           </button>
         ))}
+
+        {cloud && (
+          <button
+            className={`nav-item pro-nav${proView ? " active" : ""}`}
+            onClick={() => navigate({ name: "settings", section: "pro" })}
+          >
+            <Sparkles size={16} />
+            {t("nav.pro")}
+            {proActive && (
+              <span className="pro-pill on" title={t("pro.planActive")}>
+                <BadgeCheck size={12} />
+              </span>
+            )}
+          </button>
+        )}
 
         <div className="sidebar-section">
           <span>{t("nav.hosts")}</span>

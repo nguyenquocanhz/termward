@@ -2,10 +2,12 @@ import { create } from "zustand";
 import {
   api,
   ApiError,
+  cloudApi,
   initCore,
   subscribeEvents,
   type Alert,
   type AuthDetails,
+  type CloudStatus,
   type ExecEvent,
   type HardwareHost,
   type HardwareResult,
@@ -31,7 +33,7 @@ export type View =
   | { name: "terminals" }
   | { name: "keys" }
   | { name: "run" }
-  | { name: "settings" };
+  | { name: "settings"; section?: "pro" };
 
 export interface TermTab {
   id: string;
@@ -121,6 +123,8 @@ interface AppState {
   hardware: Record<string, HwState>;
   /** Fleet view of hardware checks: last verdict, schedule, unattended state. */
   hwFleet: Record<string, HardwareHost>;
+  /** Termward Pro (alerts to Slack/Discord/Telegram/Zalo); null when the core has none. */
+  cloud: CloudStatus | null;
   /** The current or last "check hardware on all servers" run. */
   hwRun: HardwareRun | null;
   /** Id of the finished run whose summary the user closed. */
@@ -166,6 +170,7 @@ export const useApp = create<AppState>(() => ({
   lastJob: null,
   hardware: {},
   hwFleet: {},
+  cloud: null,
   hwRun: null,
   hwRunDismissed: null,
   ...loadPrefs(),
@@ -196,7 +201,7 @@ export async function boot(): Promise<void> {
   try {
     await installBridge();
     await initCore();
-    const [hosts, keys, snippets, settings, status, alerts, fleet] = await Promise.all([
+    const [hosts, keys, snippets, settings, status, alerts, fleet, cloud] = await Promise.all([
       api.hosts(),
       api.keys(),
       api.snippets(),
@@ -204,6 +209,7 @@ export async function boot(): Promise<void> {
       api.status(),
       api.alerts(),
       api.hardwareFleet().catch(() => null),
+      cloudApi.status().catch(() => null),
     ]);
     set({
       hosts: hosts ?? [],
@@ -215,6 +221,7 @@ export async function boot(): Promise<void> {
       connected: Object.fromEntries(status.connected.map((id) => [id, true])),
       hwFleet: Object.fromEntries((fleet?.hosts ?? []).map((h) => [h.hostId, h])),
       hwRun: fleet?.run ?? null,
+      cloud,
       booted: true,
     });
     if (fleet) syncHwRunning(fleet.hosts);
@@ -223,6 +230,7 @@ export async function boot(): Promise<void> {
       if (online) {
         void refreshStatus();
         void refreshHwFleet();
+        void refreshCloud();
       }
     });
     window.termward?.onNotificationClick((hostId) => navigate({ name: "host", hostId }));
@@ -268,6 +276,18 @@ function syncHwRunning(hosts: HardwareHost[]) {
     return { hardware };
   });
 }
+export async function refreshCloud() {
+  try {
+    set({ cloud: await cloudApi.status() });
+  } catch {
+    /* offline: the next reconnect refreshes it */
+  }
+}
+
+export function setCloud(cloud: CloudStatus) {
+  set({ cloud });
+}
+
 export async function refreshStatus() {
   const s = await api.status();
   set({
@@ -359,6 +379,9 @@ function onEvent(type: string, data: unknown) {
       }
       break;
     }
+    case "cloud":
+      set({ cloud: data as CloudStatus });
+      break;
     case "keys_changed":
       void refreshKeys();
       break;

@@ -3,8 +3,9 @@ import { ExternalLink } from "lucide-react";
 import { api, type HardwareInterval, type Settings as SettingsT, type Thresholds } from "../lib/api";
 import { useT, type TKey } from "../lib/i18n";
 import { errorText, refreshHwFleet, setPrefs, toast, useApp, type LangPref, type ThemePref } from "../store";
-import { Segmented, Switch } from "../components/ui";
+import { Segmented, SettingRow, Switch } from "../components/ui";
 import { isMobile, platform } from "../lib/platform";
+import { ProSection } from "./Pro";
 
 const REPO = "https://github.com/nguyenquocanhz/termward";
 
@@ -101,7 +102,7 @@ export function Settings() {
         {t("set.thresholdsHint")}
       </p>
       <div className="card">
-        <table className="table">
+        <table className="table thresholds">
           <thead>
             <tr>
               <th />
@@ -138,6 +139,8 @@ export function Settings() {
           </tbody>
         </table>
       </div>
+
+      <ProSection />
 
       <PlatformSettings />
 
@@ -242,36 +245,6 @@ function PlatformSettings() {
     );
   }
   return null;
-}
-
-function SettingRow({
-  title,
-  hint,
-  note,
-  children,
-  last,
-}: {
-  title: string;
-  hint?: string;
-  /** A warning about the current value, shown under the hint. */
-  note?: string;
-  children: React.ReactNode;
-  last?: boolean;
-}) {
-  return (
-    <div className="row" style={{ padding: "14px 18px", borderBottom: last ? 0 : "1px solid var(--border)", gap: 20 }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 540 }}>{title}</div>
-        {hint && (
-          <div className="muted" style={{ fontSize: 12.5 }}>
-            {hint}
-          </div>
-        )}
-        {note && <div style={{ fontSize: 12.5, color: "var(--warn)", marginTop: 4 }}>{note}</div>}
-      </div>
-      {children}
-    </div>
-  );
 }
 
 async function fetchVersion(): Promise<string> {

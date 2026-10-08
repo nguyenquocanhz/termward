@@ -241,3 +241,37 @@ export function Modal({
     </div>
   );
 }
+
+/** One labelled row of a settings card. */
+export function SettingRow({
+  title,
+  hint,
+  note,
+  children,
+  last,
+}: {
+  title: string;
+  hint?: string;
+  /** A warning about the current value, shown under the hint. */
+  note?: string;
+  children: ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <div
+      className="row setting-row"
+      style={{ padding: "14px 18px", borderBottom: last ? 0 : "1px solid var(--border)", gap: 20 }}
+    >
+      <div className="setting-text">
+        <div style={{ fontWeight: 540 }}>{title}</div>
+        {hint && (
+          <div className="muted" style={{ fontSize: 12.5 }}>
+            {hint}
+          </div>
+        )}
+        {note && <div style={{ fontSize: 12.5, color: "var(--warn)", marginTop: 4 }}>{note}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}

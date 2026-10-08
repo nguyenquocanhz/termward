@@ -2,6 +2,7 @@ import Capacitor
 import Foundation
 import Security
 import Termwardcore
+import UIKit
 import UserNotifications
 
 /// iOS bridge used by app/src/lib/mobile.ts: starts the Go core inside the app
@@ -50,6 +51,13 @@ public class TermwardCorePlugin: CAPPlugin, CAPBridgedPlugin, NotificationHandle
         var d = dir
         try? d.setResourceValues(values)
 
+        // Termward Pro binds this install to the device through a hash of
+        // identifierForVendor (nil only briefly after a restart before the
+        // first unlock; the core then uses a random id kept in its vault).
+        let (vendorID, deviceName) = deviceIdentity()
+        MobileSetMachineID(vendorID)
+        MobileSetDeviceName(deviceName)
+
         // gomobile exports a C function (NSError** out-param), which Swift
         // does not turn into `throws`.
         var p = 0
@@ -59,6 +67,16 @@ public class TermwardCorePlugin: CAPPlugin, CAPBridgedPlugin, NotificationHandle
         }
         port = p
         token = MobileToken()
+    }
+
+    /// UIDevice is main-thread API; ensureStarted runs on a background queue.
+    private static func deviceIdentity() -> (String, String) {
+        let read = { () -> (String, String) in
+            let d = UIDevice.current
+            return (d.identifierForVendor?.uuidString ?? "", d.name)
+        }
+        if Thread.isMainThread { return read() }
+        return DispatchQueue.main.sync(execute: read)
     }
 
     @objc func setLanguage(_ call: CAPPluginCall) {
