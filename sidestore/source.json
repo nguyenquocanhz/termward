@@ -26,6 +26,16 @@
       ],
       "versions": [
         {
+          "version": "0.4.0",
+          "buildVersion": "400",
+          "date": "2026-10-08T11:54:24Z",
+          "localizedDescription": "Maintenance update. The desktop apps gain in-app auto-update over GitHub Releases (they propose a new version and let you choose when to update); on iOS, SideStore keeps delivering updates as before.",
+          "downloadURL": "https://github.com/nguyenquocanhz/termward/releases/download/v0.4.0/Termward-0.4.0.ipa",
+          "size": 6633551,
+          "sha256": "10ea1c2d796a1de87b9c51c7436d7a3b43599b92e0f05a1bcedb395adf916027",
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.3.0",
           "buildVersion": "300",
           "date": "2026-10-08T10:27:19Z",
