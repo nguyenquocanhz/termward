@@ -26,6 +26,16 @@
       ],
       "versions": [
         {
+          "version": "0.3.0",
+          "buildVersion": "300",
+          "date": "2026-10-08T10:27:19Z",
+          "localizedDescription": "Real-time CPU/RAM/load over SSH (no agent); terminals showing user@address with proper copy/paste and right-click menus; scheduled fleet-wide hardware checks with alerts; import servers from known_hosts; Termward Pro preview (alerts to Slack/Discord/Telegram/Zalo).",
+          "downloadURL": "https://github.com/nguyenquocanhz/termward/releases/download/v0.3.0/Termward-0.3.0.ipa",
+          "size": 6631998,
+          "sha256": "dd6b41d1f2fd1a67a8f98e3b443aff74af5301297042d9bf7741b47a6819f65a",
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "0.2.0",
           "buildVersion": "200",
           "date": "2026-10-02T13:37:49Z",
