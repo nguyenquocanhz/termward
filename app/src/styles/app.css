@@ -1796,6 +1796,68 @@ h2.section .muted {
   color: var(--info);
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.update-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 10px 16px 0;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-lg);
+  font-size: 13px;
+}
+.update-banner svg.lead {
+  color: var(--accent);
+  flex: none;
+}
+.update-banner .grow {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.update-banner .grow strong {
+  font-weight: 580;
+}
+.update-banner .muted {
+  color: var(--muted);
+}
+.update-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
+.update-progress {
+  height: 5px;
+  max-width: 320px;
+  margin-top: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  overflow: hidden;
+}
+.update-progress span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.2s var(--ease);
+}
+
 .boot {
   height: 100%;
   display: grid;

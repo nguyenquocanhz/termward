@@ -12,6 +12,7 @@ import { ContextMenuHost } from "./components/ContextMenu";
 import { DialogHost } from "./components/Dialogs";
 import { Palette } from "./components/Palette";
 import { Toasts } from "./components/Toasts";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Overview } from "./views/Overview";
 import { HostDetail } from "./views/HostDetail";
@@ -116,6 +117,9 @@ export function App() {
       {drawer && <div className="drawer-backdrop" onClick={() => useApp.setState({ drawer: false })} />}
       <main className="main">
         <TitleBar />
+        {/* Not in Terminals: that view is an opaque full-screen panel that would
+            cover the banner anyway. The proposal shows the moment you leave it. */}
+        {view.name !== "terminals" && <UpdateBanner />}
         {view.name !== "terminals" && (
           <div className="content">
             <ErrorBoundary

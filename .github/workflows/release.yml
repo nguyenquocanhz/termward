@@ -45,6 +45,8 @@ jobs:
             app/release/*.dmg
             app/release/*.AppImage
             app/release/*.deb
+            app/release/latest*.yml
+            app/release/*.blockmap
 
   android:
     name: Android

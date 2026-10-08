@@ -15,6 +15,7 @@ import {
   Tray,
 } from "electron";
 import { startCore, stopCore, type CoreInfo } from "./core";
+import { registerUpdates, checkForUpdatesOnStartup } from "./update";
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 const APP_ID = "io.github.nguyenquocanhz.termward";
@@ -245,6 +246,13 @@ if (!app.requestSingleInstanceLock()) {
 
     createWindow();
     createTray();
+    registerUpdates(
+      () => win,
+      () => {
+        quitting = true; // so the window's × does not hide the app to the tray mid-install
+      },
+    );
+    checkForUpdatesOnStartup();
   });
 
   app.on("activate", showWindow); // macOS dock click

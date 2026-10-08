@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, LoaderCircle, RotateCw } from "lucide-react";
 import { api, type HardwareInterval, type Settings as SettingsT, type Thresholds } from "../lib/api";
 import { useT, type TKey } from "../lib/i18n";
-import { errorText, refreshHwFleet, setPrefs, toast, useApp, type LangPref, type ThemePref } from "../store";
+import {
+  checkForUpdatesNow,
+  errorText,
+  refreshHwFleet,
+  setPrefs,
+  toast,
+  useApp,
+  type LangPref,
+  type ThemePref,
+} from "../store";
 import { Segmented, SettingRow, Switch } from "../components/ui";
 import { isMobile, platform } from "../lib/platform";
 import { ProSection } from "./Pro";
@@ -16,6 +25,7 @@ export function Settings() {
   const theme = useApp((s) => s.theme);
   const lang = useApp((s) => s.lang);
   const confirmPaste = useApp((s) => s.confirmPaste);
+  const updating = useApp((s) => s.update.status === "checking");
   const [draft, setDraft] = useState<SettingsT | null>(saved);
   const [version, setVersion] = useState("");
 
@@ -184,6 +194,12 @@ export function Settings() {
           <strong>Termward {version && <span className="muted">{version}</span>}</strong>
           <div className="muted">{t("set.aboutBody")}</div>
         </div>
+        {window.termward?.update && (
+          <button className="btn" onClick={checkForUpdatesNow} disabled={updating}>
+            {updating ? <LoaderCircle size={14} className="spin" /> : <RotateCw size={14} />}
+            {t("upd.check")}
+          </button>
+        )}
         <button
           className="btn"
           onClick={() => (window.termward ? window.termward.openExternal(REPO) : window.open(REPO))}

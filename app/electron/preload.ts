@@ -21,4 +21,26 @@ contextBridge.exposeInMainWorld("termward", {
   quit: () => ipcRenderer.send("app:quit"),
   getCloseToTray: () => ipcRenderer.invoke("prefs:closeToTray"),
   setCloseToTray: (on: boolean) => ipcRenderer.send("prefs:setCloseToTray", on),
+  update: {
+    check: (manual: boolean) => ipcRenderer.invoke("update:check", manual),
+    download: () => ipcRenderer.invoke("update:download"),
+    install: () => ipcRenderer.send("update:install"),
+    openDownload: () => ipcRenderer.send("update:openDownload"),
+    on: (cb: (ev: { type: string; [k: string]: unknown }) => void) => {
+      const channels: Record<string, string> = {
+        "update:available": "available",
+        "update:none": "none",
+        "update:progress": "progress",
+        "update:ready": "ready",
+        "update:error": "error",
+      };
+      const unsubs = Object.entries(channels).map(([channel, type]) => {
+        const listener = (_e: IpcRendererEvent, data: Record<string, unknown> | undefined) =>
+          cb({ type, ...(data ?? {}) });
+        ipcRenderer.on(channel, listener);
+        return () => ipcRenderer.removeListener(channel, listener);
+      });
+      return () => unsubs.forEach((f) => f());
+    },
+  },
 });

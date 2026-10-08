@@ -1,6 +1,29 @@
 // Shape of window.termward: provided by electron/preload.ts on desktop and by
 // src/lib/mobile.ts on Android/iOS. Absent in a plain browser (npm run
 // dev:web), where src/lib/api.ts falls back to the ?core=&token= parameters.
+
+/** An app-update event forwarded from the Electron main process. */
+type UpdateEvent =
+  | { type: "available"; version: string; notes?: string; canInstall: boolean; url: string }
+  | { type: "none" }
+  | { type: "progress"; percent: number }
+  | { type: "ready"; version?: string }
+  | { type: "error"; message: string };
+
+/** Desktop auto-update (electron-updater). Absent on mobile and in the browser. */
+interface UpdateBridge {
+  /** Ask whether a newer release exists. `manual` surfaces "up to date" / errors. */
+  check(manual: boolean): Promise<void>;
+  /** Download the pending update (or open the download page where self-install is impossible). */
+  download(): Promise<void>;
+  /** Quit and install a downloaded update (or open the download page). */
+  install(): void;
+  /** Open the GitHub releases page in the browser. */
+  openDownload(): void;
+  /** Subscribe to update events; returns an unsubscribe function. */
+  on(cb: (ev: UpdateEvent) => void): () => void;
+}
+
 interface TermwardBridge {
   platform: string; // "win32" | "darwin" | "linux" | "android" | "ios"
   coreInfo(): Promise<{ url: string; wsUrl: string; token: string } | null>;
@@ -24,6 +47,8 @@ interface TermwardBridge {
   setBackground?(on: boolean): Promise<void>;
   /** Mobile: language for the notifications the core posts natively. */
   setLanguage?(lang: string): void;
+  /** Desktop: app auto-update over GitHub Releases. */
+  update?: UpdateBridge;
 }
 
 interface Window {

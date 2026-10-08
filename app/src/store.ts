@@ -127,6 +127,19 @@ export interface LiveState {
   at: number;
 }
 
+/** Desktop auto-update, driven by the Electron updater via window.termward.update. */
+export interface UpdateState {
+  status: "idle" | "checking" | "available" | "downloading" | "ready" | "error";
+  version?: string;
+  notes?: string;
+  /** false on macOS/.deb: we can only open the download page, not self-install. */
+  canInstall?: boolean;
+  url?: string;
+  percent?: number;
+  /** A version the user said "Later" to, so the banner does not reappear this run. */
+  dismissed?: string;
+}
+
 interface AppState {
   booted: boolean;
   bootError?: string;
@@ -164,6 +177,8 @@ interface AppState {
   palette: boolean;
   /** Mobile: the sidebar is shown as a drawer. */
   drawer: boolean;
+  /** Desktop app auto-update. */
+  update: UpdateState;
 }
 
 const PREFS_KEY = "termward.prefs";
@@ -208,6 +223,7 @@ export const useApp = create<AppState>(() => ({
   toasts: [],
   palette: false,
   drawer: false,
+  update: { status: "idle" },
 }));
 
 const set = useApp.setState;
@@ -264,9 +280,93 @@ export async function boot(): Promise<void> {
       }
     });
     window.termward?.onNotificationClick((hostId) => navigate({ name: "host", hostId }));
+    initUpdates();
   } catch (e) {
     set({ bootError: errorText(e) });
   }
+}
+
+// ------------------------------------------------------------------ app updates
+
+/**
+ * Subscribes to the desktop updater. We only *propose* updates: the quiet
+ * startup check (fired by the Electron main) raises a banner when a newer
+ * release exists, but "up to date" and errors surface only when the user asked
+ * (a manual check, or a download in flight).
+ */
+function initUpdates() {
+  const u = window.termward?.update;
+  if (!u) return;
+  u.on((ev) => {
+    const cur = get().update;
+    switch (ev.type) {
+      case "available":
+        if (cur.dismissed === ev.version) {
+          // User said "Later" to this version: keep the banner down, but never
+          // leave a manual check dangling on "checking" (the button would spin
+          // forever). A manual check clears `dismissed` first, so it won't land
+          // here for the current version anyway.
+          if (cur.status !== "idle") set({ update: { ...cur, status: "idle" } });
+          return;
+        }
+        set({
+          update: {
+            status: "available",
+            version: ev.version,
+            notes: ev.notes,
+            canInstall: ev.canInstall,
+            url: ev.url,
+          },
+        });
+        break;
+      case "none":
+        if (cur.status === "checking") toast("success", t("upd.upToDate"));
+        set({ update: { ...cur, status: "idle" } });
+        break;
+      case "progress":
+        set({ update: { ...cur, status: "downloading", percent: ev.percent } });
+        break;
+      case "ready":
+        set({ update: { ...cur, status: "ready", version: ev.version ?? cur.version } });
+        break;
+      case "error":
+        if (cur.status === "checking") toast("error", t("upd.failed"), ev.message);
+        else if (cur.status === "downloading") toast("error", t("upd.downloadFailed"), ev.message);
+        // A failed download drops back to "available" so the user can retry.
+        set({ update: { ...cur, status: cur.status === "downloading" ? "available" : "idle" } });
+        break;
+    }
+  });
+}
+
+export function checkForUpdatesNow() {
+  const u = window.termward?.update;
+  if (!u) return;
+  // A manual check is authoritative: forget any earlier "Later" so the same
+  // version is re-proposed, and so the "available" handler never short-circuits
+  // and leaves the button stuck on "checking".
+  set((s) => ({ update: { ...s.update, status: "checking", dismissed: undefined } }));
+  void u.check(true);
+}
+
+export function startUpdateDownload() {
+  const u = window.termward?.update;
+  if (!u) return;
+  if (get().update.canInstall === false) {
+    u.openDownload();
+    return;
+  }
+  set((s) => ({ update: { ...s.update, status: "downloading", percent: 0 } }));
+  void u.download();
+}
+
+export function installUpdate() {
+  window.termward?.update?.install();
+}
+
+/** "Later": hide the banner and don't nag about this version again this run. */
+export function dismissUpdate() {
+  set((s) => ({ update: { status: "idle", dismissed: s.update.version } }));
 }
 
 export async function refreshHosts() {
