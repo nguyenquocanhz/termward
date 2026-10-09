@@ -12,7 +12,8 @@
 
 <p align="center">
   <a href="https://github.com/nguyenquocanhz/termward/actions/workflows/ci.yml"><img src="https://github.com/nguyenquocanhz/termward/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-c96442" alt="MIT license" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-c96442" alt="AGPL-3.0 license" /></a>
+  <a href="LICENSING.md"><img src="https://img.shields.io/badge/commercial-available-7a9b76" alt="Commercial license available" /></a>
 </p>
 
 <p align="center">
@@ -226,4 +227,11 @@ Giới hạn của Apple ID miễn phí: app hết hạn sau **7 ngày** nếu k
 
 ## License
 
-[MIT](LICENSE)
+Termward is **dual-licensed**. Open source under [**AGPL-3.0-or-later**](LICENSE);
+a **commercial license** is available for uses the AGPL's copyleft doesn't fit
+(embedding in a closed-source product, shipping a modified version without
+publishing changes, proprietary/managed service). See [LICENSING.md](LICENSING.md).
+
+Termward dùng **giấy phép kép**: mã nguồn mở theo [**AGPL-3.0-or-later**](LICENSE),
+và có **commercial license** cho nhu cầu không hợp với ràng buộc copyleft của AGPL
+— xem [LICENSING.md](LICENSING.md).

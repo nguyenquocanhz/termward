@@ -4,7 +4,7 @@
   "version": "0.4.0",
   "description": "SSH manager for many servers with proactive health alerts and SSH key management.",
   "author": "nguyenquocanhz",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/nguyenquocanhz/termward",
   "main": "dist-electron/main.js",
   "private": true,
