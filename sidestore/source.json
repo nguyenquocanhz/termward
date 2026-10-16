@@ -15,7 +15,7 @@
       "bundleIdentifier": "io.github.nguyenquocanhz.termward",
       "developerName": "nguyenquocanhz",
       "subtitle": "SSH manager with proactive health alerts",
-      "localizedDescription": "Manage many servers over SSH and hear about problems before your users do. Termward checks CPU, memory, disks, load, failed systemd services and Docker containers, and notifies you when a server goes down, turns critical or recovers. Nothing to install on your servers.\n\n• Terminals with an Esc/Tab/Ctrl/arrow key bar\n• Run a command on many servers at once\n• Create, import and deploy SSH keys\n• Hardware check: disks, RAID, RAM, power supplies, BMC log, with parts to replace\n• Reboot or shut down servers\n• Host keys verified, secrets kept in the Keychain\n• English and Tiếng Việt\n\nOpen source (MIT): https://github.com/nguyenquocanhz/termward",
+      "localizedDescription": "Manage many servers over SSH and hear about problems before your users do. Termward checks CPU, memory, disks, load, failed systemd services and Docker containers, and notifies you when a server goes down, turns critical or recovers. Nothing to install on your servers.\n\n• Terminals with an Esc/Tab/Ctrl/arrow key bar\n• Run a command on many servers at once\n• Create, import and deploy SSH keys\n• Hardware check: disks, RAID, RAM, power supplies, BMC log, with parts to replace\n• Reboot or shut down servers\n• Host keys verified, secrets kept in the Keychain\n• English and Tiếng Việt\n\nOpen source (AGPL-3.0): https://github.com/nguyenquocanhz/termward",
       "iconURL": "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/app/assets/icon.png",
       "tintColor": "#C96442",
       "category": "developer",
@@ -25,6 +25,16 @@
         "https://raw.githubusercontent.com/nguyenquocanhz/termward/main/docs/phone-terminal.png"
       ],
       "versions": [
+        {
+          "version": "0.5.0",
+          "buildVersion": "500",
+          "date": "2026-10-16T16:56:34Z",
+          "localizedDescription": "SFTP file manager (browse, upload, download, rename, delete over SSH); Deploy — install a control panel (aaPanel, 1Panel, CyberPanel, HestiaCP, CloudPanel, FastPanel) or a LEMP + WordPress stack over SSH; relicensed to AGPL-3.0.",
+          "downloadURL": "https://github.com/nguyenquocanhz/termward/releases/download/v0.5.0/Termward-0.5.0.ipa",
+          "size": 6723805,
+          "sha256": "dc442e0d5afa5b42ba73a5cfa5718c1ba5c771e9a1a9619d17c0c9614c99d755",
+          "minOSVersion": "15.0"
+        },
         {
           "version": "0.4.0",
           "buildVersion": "400",
