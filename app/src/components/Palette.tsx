@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   FileInput,
+  FolderOpen,
   HardDrive,
   KeyRound,
   LayoutGrid,
@@ -173,6 +174,14 @@ export function Palette({ dark }: { dark: boolean }) {
             navigate({ name: "hardware", hostId: h.id });
             void startHardwareCheck(h.id);
           },
+        });
+        actions.push({
+          id: `fm:${h.id}`,
+          group: "actions",
+          label: t("files.paletteAction", { host: h.name }),
+          hint: `${h.user}@${h.address}`,
+          icon: <FolderOpen size={15} />,
+          run: () => navigate({ name: "files", hostId: h.id }),
         });
       }
     }

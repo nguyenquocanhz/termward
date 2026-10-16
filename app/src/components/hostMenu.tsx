@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { ClipboardCopy, HardDrive, Pencil, SquareTerminal, Trash2 } from "lucide-react";
+import { ClipboardCopy, FolderOpen, HardDrive, Pencil, SquareTerminal, Trash2 } from "lucide-react";
 import type { Host } from "../lib/api";
 import { t } from "../lib/i18n";
 import { hostTarget, sshCommand } from "../lib/target";
@@ -19,6 +19,11 @@ export function hostMenuItems(host: Host): ContextItem[] {
         navigate({ name: "hardware", hostId: host.id });
         void startHardwareCheck(host.id);
       },
+    },
+    {
+      label: t("files.title"),
+      icon: <FolderOpen size={14} />,
+      run: () => navigate({ name: "files", hostId: host.id }),
     },
     { separator: true },
     {

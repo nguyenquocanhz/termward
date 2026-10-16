@@ -33,6 +33,7 @@ export type View =
   | { name: "overview" }
   | { name: "host"; hostId: string }
   | { name: "hardware"; hostId: string }
+  | { name: "files"; hostId: string }
   | { name: "terminals" }
   | { name: "keys" }
   | { name: "run" }
@@ -679,7 +680,8 @@ export function goBack(): boolean {
   }
   if (s.palette) return (set({ palette: false }), true);
   if (s.drawer) return (set({ drawer: false }), true);
-  if (s.view.name === "hardware") return (navigate({ name: "host", hostId: s.view.hostId }), true);
+  if (s.view.name === "hardware" || s.view.name === "files")
+    return (navigate({ name: "host", hostId: s.view.hostId }), true);
   if (s.view.name !== "overview") return (navigate({ name: "overview" }), true);
   return false;
 }
@@ -859,7 +861,8 @@ export function confirmDeleteHost(host: Host) {
       await api.deleteHost(host.id);
       await refreshHosts();
       const v = get().view;
-      if ((v.name === "host" || v.name === "hardware") && v.hostId === host.id) navigate({ name: "overview" });
+      if ((v.name === "host" || v.name === "hardware" || v.name === "files") && v.hostId === host.id)
+        navigate({ name: "overview" });
     },
   });
 }

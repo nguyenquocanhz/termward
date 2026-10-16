@@ -55,6 +55,24 @@ export interface Snippet {
   createdAt: string;
 }
 
+/** One row of an SFTP directory listing (POSIX paths). */
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  /** Unix seconds. */
+  mtime: number;
+  /** e.g. "-rw-r--r--". */
+  mode: string;
+  symlink: boolean;
+}
+
+export interface FileList {
+  path: string;
+  entries: FileEntry[];
+}
+
 export interface Thresholds {
   cpuWarn: number;
   cpuCrit: number;
@@ -527,6 +545,49 @@ export async function hardwareReportText(hostId: string, format: HwReportFormat,
   return blob.text();
 }
 
+/** Downloads a remote file through a Blob, saving it with its original name. */
+export async function downloadRemoteFile(hostId: string, remotePath: string): Promise<string> {
+  const { blob } = await fetchFile(`/api/hosts/${hostId}/files/content?path=${encodeURIComponent(remotePath)}`);
+  const name = remotePath.split("/").pop() || "download";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return name;
+}
+
+/** Streams a file's bytes up to a remote path (created or overwritten). */
+async function uploadRemoteFile(
+  hostId: string,
+  remotePath: string,
+  body: Blob | ArrayBuffer,
+): Promise<{ ok: boolean; path: string; size: number }> {
+  if (!core) throw new Error("core not initialised");
+  const url = `${core.url}/api/hosts/${hostId}/files/upload?path=${encodeURIComponent(remotePath)}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${core.token}`, "Content-Type": "application/octet-stream" },
+      body,
+    });
+  } catch {
+    throw new ApiError(0, "offline", "Cannot reach the Termward core.");
+  }
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : undefined;
+  if (!res.ok) {
+    const e = data?.error;
+    throw new ApiError(res.status, e?.code ?? "error", e?.message ?? res.statusText, e?.details);
+  }
+  return data as { ok: boolean; path: string; size: number };
+}
+
 export function wsUrl(path: string, params: Record<string, string | number> = {}): string {
   if (!core) throw new Error("core not initialised");
   const q = new URLSearchParams({
@@ -608,6 +669,20 @@ export const api = {
       : req<KnownHostsImport>("GET", "/api/import/known-hosts"),
   importKnownHosts: (hosts: { name: string; address: string; port: number; user: string; group: string }[]) =>
     req<ImportResult>("POST", "/api/import/known-hosts", { hosts }),
+
+  /** SFTP file manager over the host's pooled SSH connection. */
+  files: {
+    list: (hostId: string, path?: string) =>
+      req<FileList>("GET", `/api/hosts/${hostId}/files${path ? `?path=${encodeURIComponent(path)}` : ""}`),
+    mkdir: (hostId: string, path: string) =>
+      req<{ ok: boolean; path: string }>("POST", `/api/hosts/${hostId}/files/mkdir`, { path }),
+    rename: (hostId: string, from: string, to: string) =>
+      req<{ ok: boolean; path: string }>("POST", `/api/hosts/${hostId}/files/rename`, { from, to }),
+    remove: (hostId: string, path: string, recursive: boolean) =>
+      req<{ ok: boolean }>("POST", `/api/hosts/${hostId}/files/delete`, { path, recursive }),
+    download: (hostId: string, path: string) => downloadRemoteFile(hostId, path),
+    upload: (hostId: string, path: string, body: Blob | ArrayBuffer) => uploadRemoteFile(hostId, path, body),
+  },
 };
 
 // ------------------------------------------------------------ Termward Pro

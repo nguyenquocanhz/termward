@@ -85,6 +85,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/hardware/run-all", s.hardwareRunAll)
 	mux.HandleFunc("POST /api/hardware/run-all/cancel", s.hardwareRunCancel)
 
+	mux.HandleFunc("GET /api/hosts/{id}/files", s.listFiles)
+	mux.HandleFunc("GET /api/hosts/{id}/files/content", s.downloadFile)
+	mux.HandleFunc("POST /api/hosts/{id}/files/upload", s.uploadFile)
+	mux.HandleFunc("POST /api/hosts/{id}/files/mkdir", s.mkdirFile)
+	mux.HandleFunc("POST /api/hosts/{id}/files/rename", s.renameFile)
+	mux.HandleFunc("POST /api/hosts/{id}/files/delete", s.deleteFile)
+
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("GET /api/alerts", s.alerts)
 
