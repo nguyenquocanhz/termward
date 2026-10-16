@@ -34,6 +34,7 @@ export type View =
   | { name: "host"; hostId: string }
   | { name: "hardware"; hostId: string }
   | { name: "files"; hostId: string }
+  | { name: "deploy"; hostId: string }
   | { name: "terminals" }
   | { name: "keys" }
   | { name: "run" }
@@ -53,6 +54,8 @@ export interface TermTab {
   via?: string;
   /** Bumped to force a fresh session (reconnect). */
   nonce: number;
+  /** A command to run once, when the session first becomes ready (used by Deploy). */
+  runOnReady?: string;
 }
 
 export interface ExecJob {
@@ -680,7 +683,7 @@ export function goBack(): boolean {
   }
   if (s.palette) return (set({ palette: false }), true);
   if (s.drawer) return (set({ drawer: false }), true);
-  if (s.view.name === "hardware" || s.view.name === "files")
+  if (s.view.name === "hardware" || s.view.name === "files" || s.view.name === "deploy")
     return (navigate({ name: "host", hostId: s.view.hostId }), true);
   if (s.view.name !== "overview") return (navigate({ name: "overview" }), true);
   return false;
@@ -809,7 +812,7 @@ function sessionOf(h: Host): Pick<TermTab, "target" | "via"> {
   return { target: hostTarget(h), via: jump?.name };
 }
 
-export async function openTerminal(hostId: string) {
+export async function openTerminal(hostId: string, opts?: { command?: string }) {
   if (!hostById(hostId)) return;
   if (!(await ensureConnected(hostId))) return;
   const h = hostById(hostId); // may have been edited while a prompt was open
@@ -822,7 +825,7 @@ export async function openTerminal(hostId: string) {
   );
   let title = h.name;
   for (let n = 2; taken.has(title); n++) title = `${h.name} (${n})`;
-  const tab: TermTab = { id: uid(), hostId, title, ...sessionOf(h), nonce: 0 };
+  const tab: TermTab = { id: uid(), hostId, title, ...sessionOf(h), nonce: 0, runOnReady: opts?.command };
   set((s) => ({ tabs: [...s.tabs, tab], activeTab: tab.id, view: { name: "terminals" }, palette: false }));
 }
 
@@ -861,7 +864,10 @@ export function confirmDeleteHost(host: Host) {
       await api.deleteHost(host.id);
       await refreshHosts();
       const v = get().view;
-      if ((v.name === "host" || v.name === "hardware" || v.name === "files") && v.hostId === host.id)
+      if (
+        (v.name === "host" || v.name === "hardware" || v.name === "files" || v.name === "deploy") &&
+        v.hostId === host.id
+      )
         navigate({ name: "overview" });
     },
   });

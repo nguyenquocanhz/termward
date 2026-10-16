@@ -7,7 +7,7 @@ export function TitleBar() {
   const t = useT();
   const view = useApp((s) => s.view);
   const hostName = useApp((s) =>
-    s.view.name === "host" || s.view.name === "hardware" || s.view.name === "files"
+    s.view.name === "host" || s.view.name === "hardware" || s.view.name === "files" || s.view.name === "deploy"
       ? s.hosts.find((h) => h.id === (s.view as { hostId: string }).hostId)?.name
       : undefined,
   );
@@ -22,6 +22,8 @@ export function TitleBar() {
         return [t("nav.hosts"), hostName ?? "", t("hw.title")];
       case "files":
         return [t("nav.hosts"), hostName ?? "", t("files.title")];
+      case "deploy":
+        return [t("nav.hosts"), hostName ?? "", t("deploy.title")];
       case "terminals":
         return [t("nav.terminals")];
       case "keys":
@@ -36,7 +38,7 @@ export function TitleBar() {
   return (
     <header className="titlebar drag">
       {/* Phones: back from a server, otherwise open the drawer. */}
-      {view.name === "host" || view.name === "hardware" || view.name === "files" ? (
+      {view.name === "host" || view.name === "hardware" || view.name === "files" || view.name === "deploy" ? (
         <button
           className="icon-btn mobile-only"
           onClick={() => navigate(view.name === "host" ? { name: "overview" } : { name: "host", hostId: view.hostId })}

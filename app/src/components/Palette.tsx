@@ -9,6 +9,7 @@ import {
   Moon,
   Plus,
   Power,
+  Rocket,
   Search,
   Server,
   Settings2,
@@ -182,6 +183,14 @@ export function Palette({ dark }: { dark: boolean }) {
           hint: `${h.user}@${h.address}`,
           icon: <FolderOpen size={15} />,
           run: () => navigate({ name: "files", hostId: h.id }),
+        });
+        actions.push({
+          id: `dp:${h.id}`,
+          group: "actions",
+          label: t("deploy.paletteAction", { host: h.name }),
+          hint: `${h.user}@${h.address}`,
+          icon: <Rocket size={15} />,
+          run: () => navigate({ name: "deploy", hostId: h.id }),
         });
       }
     }

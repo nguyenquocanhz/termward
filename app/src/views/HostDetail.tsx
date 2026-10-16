@@ -8,6 +8,7 @@ import {
   PlugZap,
   Power,
   RefreshCw,
+  Rocket,
   RotateCw,
   SquareTerminal,
   Trash2,
@@ -138,6 +139,10 @@ export function HostDetail({ hostId }: { hostId: string }) {
               {t("card.checkNow")}
             </button>
           )}
+          <button className="btn" onClick={() => navigate({ name: "deploy", hostId: host.id })}>
+            <Rocket size={14} />
+            {t("deploy.title")}
+          </button>
           <button className="btn" onClick={() => navigate({ name: "files", hostId: host.id })}>
             <FolderOpen size={14} />
             {t("files.title")}

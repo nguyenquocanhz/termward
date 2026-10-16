@@ -740,6 +740,34 @@ const en = {
   "files.overwriteBody": "A file with this name already exists on the server.",
   "files.items": "{n} items",
   "files.paletteAction": "Files on {host}",
+
+  "deploy.title": "Deploy",
+  "deploy.subtitle": "Install a control panel or WordPress on this server.",
+  "deploy.note":
+    "Opens a terminal and runs the official installer — you watch the output live and can answer any prompts.",
+  "deploy.install": "Install",
+  "deploy.copy": "Copy command",
+  "deploy.site": "Official site",
+  "deploy.free": "Free",
+  "deploy.domain": "Domain (optional)",
+  "deploy.domainPlaceholder": "example.com — blank uses the server IP",
+  "deploy.confirmTitle": "Install {name} on {host}?",
+  "deploy.confirmBody":
+    "This opens a terminal and runs {name}'s official installer as root. It changes the server a lot (packages, web server, firewall). Best on a fresh VPS you can rebuild — not a server you can't.",
+  "deploy.run": "Open terminal & install",
+  "deploy.started": "Installing {name} in a new terminal…",
+  "deploy.paletteAction": "Deploy on {host}",
+  "deploy.d.aapanel":
+    "The most-installed free panel (3.6M+ servers). Friendly UI, 1-click WordPress from its app store, nginx/Apache, SSL, backups.",
+  "deploy.d.1panel":
+    "Modern open-source panel (37k★), Docker-based, with a WordPress app and built-in security. Big in Asia.",
+  "deploy.d.cyberpanel": "OpenLiteSpeed + LSCache — fastest for WordPress, with 1-click WP and free SSL.",
+  "deploy.d.hestiacp": "Lightweight open-source panel (nginx + php). Simple, low-RAM, WordPress via quick-install.",
+  "deploy.d.cloudpanel": "Free panel tuned for WordPress performance (nginx, PHP, MySQL, Redis).",
+  "deploy.d.fastpanel":
+    'Free control panel, quick setup, runs on port 8888. (Searched for "FlashPanel" and this is the closest real match.)',
+  "deploy.d.lemp":
+    "No panel: installs nginx + PHP + MariaDB + WP-CLI and sets up a complete WordPress site for your domain.",
 };
 
 export type TKey = keyof typeof en;
@@ -1483,6 +1511,32 @@ const vi: Record<TKey, string> = {
   "files.overwriteBody": "Đã có tệp trùng tên trên máy chủ.",
   "files.items": "{n} mục",
   "files.paletteAction": "Tệp trên {host}",
+
+  "deploy.title": "Triển khai",
+  "deploy.subtitle": "Cài panel quản trị hoặc WordPress lên server này.",
+  "deploy.note": "Mở một terminal và chạy trình cài chính chủ — bạn xem log trực tiếp và trả lời prompt nếu có.",
+  "deploy.install": "Cài đặt",
+  "deploy.copy": "Copy lệnh",
+  "deploy.site": "Trang chính chủ",
+  "deploy.free": "Miễn phí",
+  "deploy.domain": "Tên miền (tùy chọn)",
+  "deploy.domainPlaceholder": "example.com — để trống thì dùng IP server",
+  "deploy.confirmTitle": "Cài {name} lên {host}?",
+  "deploy.confirmBody":
+    "Thao tác này mở terminal và chạy trình cài chính chủ của {name} với quyền root. Nó thay đổi server rất nhiều (gói, web server, tường lửa). Nên làm trên VPS mới dựng lại được, đừng làm trên server quan trọng.",
+  "deploy.run": "Mở terminal & cài",
+  "deploy.started": "Đang cài {name} trong terminal mới…",
+  "deploy.paletteAction": "Triển khai trên {host}",
+  "deploy.d.aapanel":
+    "Panel free nhiều lượt cài nhất (3.6M+ server). Giao diện dễ, cài WordPress 1-click từ app store, nginx/Apache, SSL, backup.",
+  "deploy.d.1panel":
+    "Panel mã nguồn mở hiện đại (37k★), nền Docker, có app WordPress và bảo mật sẵn. Rất phổ biến ở châu Á.",
+  "deploy.d.cyberpanel": "OpenLiteSpeed + LSCache — nhanh nhất cho WordPress, có WP 1-click và SSL free.",
+  "deploy.d.hestiacp": "Panel mã nguồn mở nhẹ (nginx + php). Đơn giản, ít RAM, cài WordPress nhanh.",
+  "deploy.d.cloudpanel": "Panel free tối ưu tốc độ WordPress (nginx, PHP, MySQL, Redis).",
+  "deploy.d.fastpanel": 'Panel free, cài nhanh, chạy ở cổng 8888. (Tìm "FlashPanel" không ra — đây là cái khớp nhất.)',
+  "deploy.d.lemp":
+    "Không panel: cài nginx + PHP + MariaDB + WP-CLI và dựng sẵn một site WordPress hoàn chỉnh cho tên miền của bạn.",
 };
 
 export type Lang = "en" | "vi";

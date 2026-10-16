@@ -18,6 +18,7 @@ import { Overview } from "./views/Overview";
 import { HostDetail } from "./views/HostDetail";
 import { HardwareView } from "./views/Hardware";
 import { FilesView } from "./views/Files";
+import { DeployView } from "./views/Deploy";
 import { Terminals } from "./views/Terminals";
 import { Keys } from "./views/Keys";
 import { Run } from "./views/Run";
@@ -125,7 +126,7 @@ export function App() {
           <div className="content">
             <ErrorBoundary
               resetKey={
-                view.name === "host" || view.name === "hardware" || view.name === "files"
+                view.name === "host" || view.name === "hardware" || view.name === "files" || view.name === "deploy"
                   ? view.name + view.hostId
                   : view.name
               }
@@ -134,6 +135,7 @@ export function App() {
               {view.name === "host" && <HostDetail key={view.hostId} hostId={view.hostId} />}
               {view.name === "hardware" && <HardwareView key={view.hostId} hostId={view.hostId} />}
               {view.name === "files" && <FilesView key={view.hostId} hostId={view.hostId} />}
+              {view.name === "deploy" && <DeployView key={view.hostId} hostId={view.hostId} />}
               {view.name === "keys" && <Keys />}
               {view.name === "run" && <Run />}
               {view.name === "settings" && <Settings />}

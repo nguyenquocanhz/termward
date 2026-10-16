@@ -453,6 +453,13 @@ function TerminalPane({ tab, active }: { tab: TermTab; active: boolean }) {
       if (msg.type === "ready") {
         setState({ kind: "open" });
         term.focus();
+        if (tab.runOnReady) {
+          send(tab.runOnReady.replace(/\r?\n$/, "") + "\n");
+          // Clear it so a reconnect of this tab does not run it again.
+          useApp.setState((s) => ({
+            tabs: s.tabs.map((x) => (x.id === tab.id ? { ...x, runOnReady: undefined } : x)),
+          }));
+        }
       } else if (msg.type === "exit") {
         setState({ kind: "closed", code: msg.code });
       } else if (msg.type === "error") {
